@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dreamina Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-900 h-screen overflow-hidden">
+    <div id="app" class="h-full flex flex-col">
+
+        <!-- Login Screen -->
+        <div v-if="!isLoggedIn"
+            class="flex-1 flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600">
+            <div class="bg-white p-8 rounded-2xl shadow-2xl w-96 glass">
+                <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">Dreamina Manager</h1>
+                <form @submit.prevent="login">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input v-model="password" type="password"
+                            class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
+                            placeholder="Enter admin password" required>
+                    </div>
+                    <button type="submit"
+                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">Login</button>
+                    <p v-if="loginError" class="mt-2 text-red-500 text-sm text-center">{{ loginError }}</p>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main App -->
+        <div v-else class="flex-1 flex overflow-hidden">
+            <!-- Sidebar -->
+            <aside class="w-64 bg-white border-r border-gray-200 flex flex-col z-10">
+                <div class="p-6 border-b border-gray-100">
+                    <h1
+                        class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+                        Dreamina Manager</h1>
+                </div>
+                <nav class="flex-1 p-4 space-y-2">
+                    <button @click="currentView = 'dashboard'"
+                        :class="{'bg-indigo-50 text-indigo-600': currentView === 'dashboard', 'text-gray-600 hover:bg-gray-50': currentView !== 'dashboard'}"
+                        class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition font-medium">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
+                            </path>
+                        </svg>
+                        <span>Dashboard</span>
+                    </button>
+                    <button @click="currentView = 'settings'"
+                        :class="{'bg-indigo-50 text-indigo-600': currentView === 'settings', 'text-gray-600 hover:bg-gray-50': currentView !== 'settings'}"
+                        class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition font-medium">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                            </path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        <span>Settings</span>
+                    </button>
+                </nav>
+                <div class="p-4 border-t border-gray-100">
+                    <button @click="logout"
+                        class="w-full flex items-center space-x-3 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition text-sm font-medium">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                            </path>
+                        </svg>
+                        <span>Logout</span>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Content Area -->
+            <main class="flex-1 overflow-auto bg-slate-50 p-8">
+
+                <!-- Dashboard View -->
+                <div v-if="currentView === 'dashboard'" class="h-full flex flex-col">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-gray-800">Accounts</h2>
+                        <button @click="openAddModal"
+                            class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow-sm transition flex items-center space-x-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            <span>Add Account</span>
+                        </button>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex space-x-4 mb-4">
+                        <input v-model="filters.email" placeholder="Search Email"
+                            class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <select v-model="filters.region"
+                            class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <option value="">All Regions</option>
+                            <option value="us">US</option>
+                            <option value="eu">EU</option>
+                            <option value="asia">Asia</option>
+                        </select>
+                        <button @click="fetchAccounts"
+                            class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition">Filter</button>
+                    </div>
+
+                    <!-- Table Container -->
+                    <div
+                        class="bg-white rounded-xl shadow-sm border border-gray-100 flex-1 flex flex-col overflow-hidden">
+                        <div class="flex-1 overflow-auto relative">
+                            <table class="w-full text-left text-sm text-gray-600 min-w-max">
+                                <thead
+                                    class="bg-gray-50 text-gray-700 font-semibold uppercase text-xs sticky top-0 z-20">
+                                    <tr>
+                                        <th class="px-4 py-3 sticky left-0 top-0 bg-gray-50 z-30 min-w-[200px]">Email</th>
+                                        <th class="px-4 py-3 sticky left-[200px] top-0 bg-gray-50 z-30 min-w-[80px]">Status
+                                        </th>
+                                        <th class="px-4 py-3 sticky left-[280px] top-0 bg-gray-50 z-30 min-w-[180px] text-right">
+                                            Actions</th>
+                                        <th class="px-4 py-3 min-w-[60px]">ID</th>
+                                        <th class="px-4 py-3 min-w-[80px]">Region</th>
+                                        <th class="px-4 py-3 min-w-[80px]">Points</th>
+                                        <th class="px-4 py-3 min-w-[80px]">Session ID</th>
+                                        <th class="px-4 py-3 min-w-[100px]">Jimeng 4.0</th>
+                                        <th class="px-4 py-3 min-w-[100px]">Jimeng 4.1</th>
+                                        <th class="px-4 py-3 min-w-[100px]">Nanobanana</th>
+                                        <th class="px-4 py-3 min-w-[120px]">NanobananaPro</th>
+                                        <th class="px-4 py-3 min-w-[100px]">Video 3.0</th>
+                                        <th class="px-4 py-3 min-w-[80px]">Errors</th>
+                                        <th class="px-4 py-3 min-w-[150px]">Ban Until</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <tr v-for="account in accounts" :key="account.id"
+                                        class="hover:bg-gray-50 transition">
+                                        <td class="px-4 py-3 sticky left-0 bg-white z-10 font-medium text-gray-900">{{
+                                            account.email }}</td>
+                                        <td class="px-4 py-3 sticky left-[200px] bg-white z-10">
+                                            <span v-if="account.is_banned"
+                                                class="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-bold">Banned</span>
+                                            <span v-else
+                                                class="px-2 py-1 bg-green-50 text-green-600 rounded text-xs font-bold">Active</span>
+                                        </td>
+                                        <td class="px-4 py-3 sticky left-[280px] bg-white z-10 text-right space-x-2">
+                                            <button @click="editAccount(account)"
+                                                class="text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
+                                            <button @click="toggleBan(account)"
+                                                :class="account.is_banned ? 'text-green-600 hover:text-green-800' : 'text-orange-600 hover:text-orange-800'"
+                                                class="font-medium">
+                                                {{ account.is_banned ? 'Unban' : 'Ban' }}
+                                            </button>
+                                            <button @click="deleteAccount(account.id)"
+                                                class="text-red-600 hover:text-red-800 font-medium">Delete</button>
+                                        </td>
+                                        <td class="px-4 py-3">{{ account.id }}</td>
+                                        <td class="px-4 py-3"><span
+                                                class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs font-bold uppercase">{{
+                                                account.region }}</span></td>
+                                        <td class="px-4 py-3">{{ account.points }}</td>
+                                        <td class="px-4 py-3 font-mono text-xs truncate max-w-[100px]"
+                                            :title="account.session_id">{{ account.session_id?.substring(0, 8) }}...
+                                        </td>
+                                        <td class="px-4 py-3 text-center"><span
+                                                class="px-2 py-1 bg-purple-50 text-purple-600 rounded text-xs font-bold">{{
+                                                account.jimeng_4_0_count }}</span></td>
+                                        <td class="px-4 py-3 text-center"><span
+                                                class="px-2 py-1 bg-purple-50 text-purple-600 rounded text-xs font-bold">{{
+                                                account.jimeng_4_1_count }}</span></td>
+                                        <td class="px-4 py-3 text-center"><span
+                                                class="px-2 py-1 bg-amber-50 text-amber-600 rounded text-xs font-bold">{{
+                                                account.nanobanana_count }}</span></td>
+                                        <td class="px-4 py-3 text-center"><span
+                                                class="px-2 py-1 bg-amber-50 text-amber-600 rounded text-xs font-bold">{{
+                                                account.nanobananapro_count }}</span></td>
+                                        <td class="px-4 py-3 text-center"><span
+                                                class="px-2 py-1 bg-cyan-50 text-cyan-600 rounded text-xs font-bold">{{
+                                                account.video_3_0_count }}</span></td>
+                                        <td class="px-4 py-3 text-center"><span
+                                                class="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-bold">{{
+                                                account.error_count }}</span></td>
+                                        <td class="px-4 py-3 text-xs text-gray-500">{{ account.ban_until ? new
+                                            Date(account.ban_until).toLocaleString() : '-' }}</td>
+                                    </tr>
+                                    <tr v-if="accounts.length === 0">
+                                        <td colspan="14" class="px-6 py-8 text-center text-gray-400">No accounts found
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Pagination -->
+                        <div class="px-6 py-3 border-t border-gray-100 flex justify-between items-center bg-white">
+                            <span class="text-sm text-gray-500">Page {{ pagination.page }} of {{
+                                Math.ceil(pagination.total / pagination.size) || 1 }} (Total: {{ pagination.total
+                                }})</span>
+                            <div class="space-x-2">
+                                <button @click="changePage(-1)" :disabled="pagination.page === 1"
+                                    class="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50">Prev</button>
+                                <button @click="changePage(1)"
+                                    :disabled="pagination.page * pagination.size >= pagination.total"
+                                    class="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50">Next</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings View -->
+                <div v-if="currentView === 'settings'" class="max-w-2xl mx-auto">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">System Settings</h2>
+                    <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                        <form @submit.prevent="saveSettings" class="space-y-6">
+                            <div v-for="(value, key) in settings" :key="key">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">{{ formatKey(key) }}</label>
+                                <input v-model="settings[key]" type="text"
+                                    class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+                            <div class="pt-4">
+                                <button type="submit"
+                                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition shadow-lg shadow-indigo-200">Save
+                                    Configuration</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+
+        <!-- Add/Edit Modal -->
+        <div v-if="showModal"
+            class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+            <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
+                <h3 class="text-xl font-bold mb-6 text-gray-800">{{ modalMode === 'add' ? 'Add Account' : 'Edit Account'
+                    }}</h3>
+                <form @submit.prevent="submitAccount" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input v-model="modalForm.email" type="email"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                            required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input v-model="modalForm.password" type="text"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                            :required="modalMode === 'add'">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Region</label>
+                        <select v-model="modalForm.region"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <option value="us">US</option>
+                            <option value="eu">EU</option>
+                            <option value="asia">Asia</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Session ID</label>
+                        <input v-model="modalForm.session_id" type="text"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Points</label>
+                        <input v-model.number="modalForm.points" type="number" step="0.1"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                    </div>
+                    <div class="flex space-x-3 pt-4">
+                        <button type="button" @click="showModal = false"
+                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">Cancel</button>
+                        <button type="submit"
+                            class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, onUnmounted, reactive } = Vue;
+
+        createApp({
+            setup() {
+                const isLoggedIn = ref(false);
+                const password = ref('');
+                const loginError = ref('');
+                const currentView = ref('dashboard');
+
+                const accounts = ref([]);
+                const pagination = reactive({ page: 1, size: 100, total: 0 });
+                const filters = reactive({ email: '', region: '' });
+
+                const settings = ref({});
+
+                const showModal = ref(false);
+                const modalMode = ref('add');
+                const modalForm = reactive({ id: null, email: '', password: '', region: 'us', session_id: '', points: 0 });
+
+                // Auto-refresh settings (5 seconds default)
+                const refreshInterval = 5000;
+                let refreshTimer = null;
+
+                // Axios interceptor for auth
+                axios.interceptors.request.use(config => {
+                    if (password.value) {
+                        config.headers.Authorization = `Bearer ${password.value}`;
+                    }
+                    return config;
+                });
+
+                const login = async () => {
+                    try {
+                        await axios.get('/api/settings', { headers: { Authorization: `Bearer ${password.value}` } });
+                        isLoggedIn.value = true;
+                        fetchAccounts();
+                        fetchSettings();
+                        startAutoRefresh();
+                    } catch (e) {
+                        loginError.value = 'Invalid password';
+                    }
+                };
+
+                const logout = () => {
+                    isLoggedIn.value = false;
+                    password.value = '';
+                    stopAutoRefresh();
+                };
+
+                const startAutoRefresh = () => {
+                    stopAutoRefresh();
+                    refreshTimer = setInterval(() => {
+                        if (currentView.value === 'dashboard') {
+                            fetchAccounts();
+                        }
+                    }, refreshInterval);
+                };
+
+                const stopAutoRefresh = () => {
+                    if (refreshTimer) {
+                        clearInterval(refreshTimer);
+                        refreshTimer = null;
+                    }
+                };
+
+                const fetchAccounts = async () => {
+                    try {
+                        const params = { page: pagination.page, size: pagination.size, ...filters };
+                        const res = await axios.get('/api/accounts', { params });
+                        accounts.value = res.data.items;
+                        pagination.total = res.data.total;
+                    } catch (e) {
+                        console.error(e);
+                    }
+                };
+
+                const changePage = (delta) => {
+                    pagination.page += delta;
+                    fetchAccounts();
+                };
+
+                const fetchSettings = async () => {
+                    try {
+                        const res = await axios.get('/api/settings');
+                        settings.value = res.data;
+                    } catch (e) {
+                        console.error(e);
+                    }
+                };
+
+                const saveSettings = async () => {
+                    try {
+                        await axios.post('/api/settings', settings.value);
+                        alert('Settings saved!');
+                    } catch (e) {
+                        alert('Error saving settings');
+                    }
+                };
+
+                const openAddModal = () => {
+                    modalMode.value = 'add';
+                    Object.assign(modalForm, { id: null, email: '', password: '', region: 'us', session_id: '', points: 0 });
+                    showModal.value = true;
+                };
+
+                const editAccount = (account) => {
+                    modalMode.value = 'edit';
+                    Object.assign(modalForm, account);
+                    showModal.value = true;
+                };
+
+                const submitAccount = async () => {
+                    try {
+                        if (modalMode.value === 'add') {
+                            await axios.post('/api/accounts', modalForm);
+                        } else {
+                            await axios.put(`/api/accounts/${modalForm.id}`, modalForm);
+                        }
+                        showModal.value = false;
+                        fetchAccounts();
+                    } catch (e) {
+                        alert('Error saving account: ' + (e.response?.data?.detail || e.message));
+                    }
+                };
+
+                const deleteAccount = async (id) => {
+                    if (!confirm('Are you sure?')) return;
+                    try {
+                        await axios.delete(`/api/accounts/${id}`);
+                        fetchAccounts();
+                    } catch (e) {
+                        alert('Error deleting account');
+                    }
+                };
+
+                const toggleBan = async (account) => {
+                    try {
+                        if (account.is_banned) {
+                            await axios.post(`/api/accounts/${account.id}/unban`);
+                        } else {
+                            await axios.post(`/api/accounts/${account.id}/ban`);
+                        }
+                        fetchAccounts();
+                    } catch (e) {
+                        alert('Error changing ban status');
+                    }
+                };
+
+                const formatKey = (key) => {
+                    return key.replace(/_/g, ' ');
+                };
+
+                // Cleanup on unmount
+                onUnmounted(() => {
+                    stopAutoRefresh();
+                });
+
+                return {
+                    isLoggedIn, password, loginError, login, logout,
+                    currentView,
+                    accounts, pagination, filters, fetchAccounts, changePage,
+                    settings, saveSettings, formatKey,
+                    showModal, modalMode, modalForm, openAddModal, editAccount, submitAccount, deleteAccount, toggleBan
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+
+</html>
