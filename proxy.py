@@ -1,6 +1,7 @@
 import json
 import random
 import httpx
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Request, HTTPException, Response, BackgroundTasks
@@ -9,10 +10,6 @@ from sqlalchemy import select, and_, or_
 from database import get_db, Account, AsyncSessionLocal
 from config import settings
 
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 router = APIRouter()

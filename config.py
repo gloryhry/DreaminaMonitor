@@ -1,74 +1,76 @@
 import json
-import os
+import logging
+from pathlib import Path
 from typing import Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 from pydantic import Field
 
-CONFIG_FILE = "config.json"
+# 配置文件路径
+CONFIG_FILE = Path(__file__).parent / "config.json"
+
 
 class Settings(BaseSettings):
-    ADMIN_PASSWORD: str = Field(default="admin123", description="Password for both API proxy and Frontend login")
-    DATABASE_URL: str = Field(default="sqlite+aiosqlite:///./dreamina.db", description="Database connection string")
-    UPSTREAM_BASE_URL: str = Field(default="https://api.dreamina.com", description="Upstream API URL")
-    PORT: int = Field(default=5100, description="Server port")
-    HOST: str = Field(default="0.0.0.0", description="Server host")
+    """应用配置"""
+    # 基础设置
+    ADMIN_PASSWORD: str = Field(default="admin")
+    DATABASE_URL: str = Field(default="sqlite+aiosqlite:///./dreamina.db")
+    UPSTREAM_BASE_URL: str = Field(default="http://localhost:8080")
+    HOST: str = Field(default="0.0.0.0")
+    PORT: int = Field(default=5100)
+    PROXY_TIMEOUT: int = Field(default=300)
     
-    # Proxy settings
-    PROXY_TIMEOUT: int = Field(default=60, description="Proxy request timeout in seconds")
+    # 日志等级
+    LOG_LEVEL: str = Field(default="info")
     
-    # Model Usage Thresholds
-    LIMIT_JIMENG_4_0: int = Field(default=1000, description="Daily limit for jimeng-4.0")
-    LIMIT_JIMENG_4_1: int = Field(default=1000, description="Daily limit for jimeng-4.1")
-    LIMIT_NANOBANANA: int = Field(default=1000, description="Daily limit for nanobanana")
-    LIMIT_NANOBANANAPRO: int = Field(default=1000, description="Daily limit for nanobananapro")
-    LIMIT_VIDEO_3_0: int = Field(default=1000, description="Daily limit for video-3.0")
+    # 模型使用限制
+    LIMIT_JIMENG_4_0: int = Field(default=60)
+    LIMIT_JIMENG_4_1: int = Field(default=60)
+    LIMIT_NANOBANANA: int = Field(default=60)
+    LIMIT_NANOBANANAPRO: int = Field(default=60)
+    LIMIT_VIDEO_3_0: int = Field(default=60)
     
-    # Dreamina-register API settings
-    REGISTER_API_URL: str = Field(default="http://localhost:8000", description="Dreamina-register API URL")
-    REGISTER_API_KEY: str = Field(default="", description="Dreamina-register API Key")
-    REGISTER_MAIL_TYPE: str = Field(default="moemail", description="Mail type for registration (moemail/tempmailhub)")
-    DEFAULT_POINTS: float = Field(default=120.0, description="Default points for new accounts")
-    RESET_COUNTS_TIME: str = Field(default="00:00", description="Daily reset time for usage counts (HH:MM format)")
+    # Dreamina-register API 设置
+    REGISTER_API_URL: Optional[str] = Field(default=None)
+    REGISTER_API_KEY: Optional[str] = Field(default=None)
+    REGISTER_MAIL_TYPE: str = Field(default="moemail")
+    DEFAULT_POINTS: float = Field(default=120.0)
     
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
-
+    # 重置时间设置
+    RESET_COUNTS_TIME: str = Field(default="00:00")
+    
+    # Session 自动更新设置
+    SESSION_UPDATE_DAYS: int = Field(default=7)
+    SESSION_UPDATE_BATCH_SIZE: int = Field(default=5)
+    
+    # 自动注册设置
+    AUTO_REGISTER_ENABLED: bool = Field(default=False)
+    AUTO_REGISTER_INTERVAL: int = Field(default=3600)
+    
     @classmethod
     def load_config(cls) -> "Settings":
-        """
-        Load settings with priority: Config File > Environment Variables > Defaults
-        """
-        # Start with defaults and env vars
-        settings = cls()
-        
-        # Override with config file if it exists
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    file_config = json.load(f)
-                    # Update settings with file values
-                    # We iterate over fields to ensure we only update valid settings
-                    updated_values = {}
-                    for key, value in file_config.items():
-                        if hasattr(settings, key):
-                            updated_values[key] = value
-                    
-                    # Create a new instance with updated values
-                    settings = settings.model_copy(update=updated_values)
-            except Exception as e:
-                print(f"Error loading config file: {e}")
-        
-        return settings
+        """从 config.json 加载配置"""
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                config_data = json.load(f)
+            return cls(**config_data)
+        return cls()
+    
+    def save_config(self) -> None:
+        """保存配置到 config.json"""
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(self.model_dump(), f, indent=2, ensure_ascii=False)
 
-    def save_config(self):
-        """
-        Save current settings to config.json
-        """
-        config_dict = self.model_dump()
-        try:
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(config_dict, f, indent=4)
-        except Exception as e:
-            print(f"Error saving config file: {e}")
+    def get_log_level(self) -> int:
+        """获取日志等级对应的 logging 常量"""
+        level_map = {
+            "debug": logging.DEBUG,
+            "info": logging.INFO,
+            "warning": logging.WARNING,
+            "error": logging.ERROR,
+            "critical": logging.CRITICAL,
+        }
+        return level_map.get(self.LOG_LEVEL.lower(), logging.INFO)
 
-# Global settings instance
+
+# 全局配置实例
 settings = Settings.load_config()

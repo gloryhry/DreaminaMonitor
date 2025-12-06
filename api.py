@@ -81,6 +81,14 @@ class SettingsUpdate(BaseModel):
     REGISTER_MAIL_TYPE: Optional[str] = None
     DEFAULT_POINTS: Optional[float] = None
     RESET_COUNTS_TIME: Optional[str] = None
+    # Session auto-update settings
+    SESSION_UPDATE_DAYS: Optional[int] = None
+    SESSION_UPDATE_BATCH_SIZE: Optional[int] = None
+    # Auto-register settings
+    AUTO_REGISTER_ENABLED: Optional[bool] = None
+    AUTO_REGISTER_INTERVAL: Optional[int] = None
+    # Logging settings
+    LOG_LEVEL: Optional[str] = None
 
 # Account Endpoints
 @router.get("/accounts", response_model=PaginatedAccounts)
