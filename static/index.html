@@ -48,45 +48,65 @@
         <!-- Main App -->
         <div v-else class="flex-1 flex overflow-hidden">
             <!-- Sidebar -->
-            <aside class="w-64 bg-white border-r border-gray-200 flex flex-col z-10">
-                <div class="p-6 border-b border-gray-100">
-                    <h1
-                        class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+            <aside :style="{ width: sidebarCollapsed ? '64px' : sidebarWidth + 'px' }"
+                class="bg-white border-r border-gray-200 flex flex-col z-10 relative flex-shrink-0"
+                :class="{ 'transition-all duration-300 ease-in-out': !isResizing }">
+                <!-- Resize Handle -->
+                <div v-if="!sidebarCollapsed" @mousedown="startResize"
+                    class="absolute right-0 top-0 h-full w-1 cursor-ew-resize hover:bg-indigo-400 transition-colors z-20"
+                    :class="{ 'bg-indigo-500': isResizing }"></div>
+                <div class="p-4 border-b border-gray-100 flex items-center justify-between min-h-[72px]">
+                    <h1 v-if="!sidebarCollapsed"
+                        class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 truncate">
                         Dreamina Manager</h1>
+                    <button @click="sidebarCollapsed = !sidebarCollapsed"
+                        class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition flex-shrink-0"
+                        :title="sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'">
+                        <svg class="w-5 h-5 transition-transform duration-300" :class="{'rotate-180': sidebarCollapsed}"
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+                        </svg>
+                    </button>
                 </div>
-                <nav class="flex-1 p-4 space-y-2">
+                <nav class="flex-1 p-2 space-y-2">
                     <button @click="currentView = 'dashboard'"
                         :class="{'bg-indigo-50 text-indigo-600': currentView === 'dashboard', 'text-gray-600 hover:bg-gray-50': currentView !== 'dashboard'}"
-                        class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition font-medium">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        :title="sidebarCollapsed ? 'Dashboard' : ''"
+                        class="w-full flex items-center px-3 py-3 rounded-xl transition font-medium"
+                        :style="sidebarCollapsed ? 'justify-content: center' : ''">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
                             </path>
                         </svg>
-                        <span>Dashboard</span>
+                        <span v-if="!sidebarCollapsed" class="ml-3">Dashboard</span>
                     </button>
                     <button @click="currentView = 'settings'"
                         :class="{'bg-indigo-50 text-indigo-600': currentView === 'settings', 'text-gray-600 hover:bg-gray-50': currentView !== 'settings'}"
-                        class="w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition font-medium">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        :title="sidebarCollapsed ? 'Settings' : ''"
+                        class="w-full flex items-center px-3 py-3 rounded-xl transition font-medium"
+                        :style="sidebarCollapsed ? 'justify-content: center' : ''">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
                             </path>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
-                        <span>Settings</span>
+                        <span v-if="!sidebarCollapsed" class="ml-3">Settings</span>
                     </button>
                 </nav>
-                <div class="p-4 border-t border-gray-100">
-                    <button @click="logout"
-                        class="w-full flex items-center space-x-3 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition text-sm font-medium">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="p-2 border-t border-gray-100">
+                    <button @click="logout" :title="sidebarCollapsed ? 'Logout' : ''"
+                        class="w-full flex items-center px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition text-sm font-medium"
+                        :style="sidebarCollapsed ? 'justify-content: center' : ''">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
                             </path>
                         </svg>
-                        <span>Logout</span>
+                        <span v-if="!sidebarCollapsed" class="ml-3">Logout</span>
                     </button>
                 </div>
             </aside>
@@ -98,14 +118,42 @@
                 <div v-if="currentView === 'dashboard'" class="h-full flex flex-col">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-2xl font-bold text-gray-800">Accounts</h2>
-                        <button @click="openAddModal"
-                            class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow-sm transition flex items-center space-x-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 4v16m8-8H4"></path>
-                            </svg>
-                            <span>Add Account</span>
-                        </button>
+                        <div class="flex space-x-3">
+                            <button @click="registerAccount" :disabled="registerLoading"
+                                class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-4 py-2 rounded-lg shadow-sm transition flex items-center space-x-2">
+                                <svg v-if="registerLoading" class="animate-spin w-5 h-5" fill="none"
+                                    viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                        stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor"
+                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                                    </path>
+                                </svg>
+                                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z">
+                                    </path>
+                                </svg>
+                                <span>{{ registerLoading ? 'Registering...' : 'Register Account' }}</span>
+                            </button>
+                            <button @click="openAddModal"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow-sm transition flex items-center space-x-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 4v16m8-8H4"></path>
+                                </svg>
+                                <span>Add Account</span>
+                            </button>
+                            <button @click="openBulkAddModal"
+                                class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg shadow-sm transition flex items-center space-x-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                    </path>
+                                </svg>
+                                <span>Bulk Add</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Filters -->
@@ -131,10 +179,13 @@
                                 <thead
                                     class="bg-gray-50 text-gray-700 font-semibold uppercase text-xs sticky top-0 z-20">
                                     <tr>
-                                        <th class="px-4 py-3 sticky left-0 top-0 bg-gray-50 z-30 min-w-[200px]">Email</th>
-                                        <th class="px-4 py-3 sticky left-[200px] top-0 bg-gray-50 z-30 min-w-[80px]">Status
+                                        <th class="px-4 py-3 sticky left-0 top-0 bg-gray-50 z-30 min-w-[200px]">Email
                                         </th>
-                                        <th class="px-4 py-3 sticky left-[280px] top-0 bg-gray-50 z-30 min-w-[180px] text-right">
+                                        <th class="px-4 py-3 sticky left-[200px] top-0 bg-gray-50 z-30 min-w-[80px]">
+                                            Status
+                                        </th>
+                                        <th
+                                            class="px-4 py-3 sticky left-[280px] top-0 bg-gray-50 z-30 min-w-[240px] text-right">
                                             Actions</th>
                                         <th class="px-4 py-3 min-w-[60px]">ID</th>
                                         <th class="px-4 py-3 min-w-[80px]">Region</th>
@@ -161,6 +212,11 @@
                                                 class="px-2 py-1 bg-green-50 text-green-600 rounded text-xs font-bold">Active</span>
                                         </td>
                                         <td class="px-4 py-3 sticky left-[280px] bg-white z-10 text-right space-x-2">
+                                            <button @click="updateSession(account)"
+                                                :disabled="updatingAccountIds.has(account.id)"
+                                                class="text-teal-600 hover:text-teal-800 disabled:text-teal-400 font-medium">
+                                                {{ updatingAccountIds.has(account.id) ? 'Updating...' : 'Update' }}
+                                            </button>
                                             <button @click="editAccount(account)"
                                                 class="text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
                                             <button @click="toggleBan(account)"
@@ -293,6 +349,69 @@
             </div>
         </div>
 
+        <!-- Bulk Add Modal -->
+        <div v-if="showBulkModal"
+            class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+            <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <h3 class="text-xl font-bold mb-6 text-gray-800">Bulk Add Accounts</h3>
+                <form @submit.prevent="submitBulkAccounts" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Region</label>
+                            <select v-model="bulkForm.region"
+                                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+                                <option value="us">US</option>
+                                <option value="eu">EU</option>
+                                <option value="asia">Asia</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Points</label>
+                            <input v-model.number="bulkForm.points" type="number" step="0.1"
+                                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Credentials <span class="text-gray-400">(每行: email:password)</span>
+                        </label>
+                        <textarea v-model="bulkForm.credentials" rows="6"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-mono text-sm"
+                            placeholder="user1@example.com:password1&#10;user2@example.com:password2"></textarea>
+                        <p class="text-xs text-gray-400 mt-1">行数: {{ credentialsLineCount }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Session IDs <span class="text-gray-400">(每行一个, 与上面行数对应)</span>
+                        </label>
+                        <textarea v-model="bulkForm.session_ids" rows="6"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-mono text-sm"
+                            placeholder="session_id_1&#10;session_id_2"></textarea>
+                        <p class="text-xs text-gray-400 mt-1">行数: {{ sessionIdsLineCount }}</p>
+                    </div>
+                    <div v-if="credentialsLineCount !== sessionIdsLineCount && credentialsLineCount > 0 && sessionIdsLineCount > 0"
+                        class="text-red-500 text-sm bg-red-50 p-2 rounded">
+                        ⚠️ 行数不匹配: Credentials 有 {{ credentialsLineCount }} 行, Session IDs 有 {{ sessionIdsLineCount }} 行
+                    </div>
+                    <div class="flex space-x-3 pt-4">
+                        <button type="button" @click="showBulkModal = false"
+                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">Cancel</button>
+                        <button type="submit" :disabled="bulkLoading"
+                            class="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition shadow-lg shadow-purple-200 disabled:bg-purple-400 flex items-center justify-center">
+                            <svg v-if="bulkLoading" class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                    stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                                </path>
+                            </svg>
+                            {{ bulkLoading ? 'Adding...' : 'Add Accounts' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -304,6 +423,11 @@
                 const password = ref('');
                 const loginError = ref('');
                 const currentView = ref('dashboard');
+                const sidebarCollapsed = ref(false);
+                const sidebarWidth = ref(256);  // 默认宽度 256px
+                const isResizing = ref(false);
+                const SIDEBAR_MIN_WIDTH = 64;   // 折叠阈值
+                const SIDEBAR_MAX_WIDTH = 400;  // 最大宽度
 
                 const accounts = ref([]);
                 const pagination = reactive({ page: 1, size: 100, total: 0 });
@@ -314,6 +438,23 @@
                 const showModal = ref(false);
                 const modalMode = ref('add');
                 const modalForm = reactive({ id: null, email: '', password: '', region: 'us', session_id: '', points: 0 });
+
+                // Register and update session state
+                const registerLoading = ref(false);
+                const updatingAccountIds = ref(new Set());
+
+                // Bulk add state
+                const showBulkModal = ref(false);
+                const bulkLoading = ref(false);
+                const bulkForm = reactive({ credentials: '', session_ids: '', region: 'us', points: 120 });
+
+                // Computed line counts for bulk form
+                const credentialsLineCount = Vue.computed(() => {
+                    return bulkForm.credentials.trim() ? bulkForm.credentials.trim().split('\n').filter(l => l.trim()).length : 0;
+                });
+                const sessionIdsLineCount = Vue.computed(() => {
+                    return bulkForm.session_ids.trim() ? bulkForm.session_ids.trim().split('\n').filter(l => l.trim()).length : 0;
+                });
 
                 // Auto-refresh settings (5 seconds default)
                 const refreshInterval = 5000;
@@ -448,17 +589,120 @@
                     return key.replace(/_/g, ' ');
                 };
 
+                // Register a new account via Dreamina-register API
+                const registerAccount = async () => {
+                    if (registerLoading.value) return;
+                    registerLoading.value = true;
+                    try {
+                        const res = await axios.post('/api/register-account');
+                        alert(`Account registered successfully!\nEmail: ${res.data.account?.email || 'N/A'}`);
+                        fetchAccounts();
+                    } catch (e) {
+                        alert('Registration failed: ' + (e.response?.data?.detail || e.message));
+                    } finally {
+                        registerLoading.value = false;
+                    }
+                };
+
+                // Update session_id for an account (supports concurrent updates)
+                const updateSession = async (account) => {
+                    if (updatingAccountIds.value.has(account.id)) return;
+                    updatingAccountIds.value.add(account.id);
+                    // Trigger reactivity
+                    updatingAccountIds.value = new Set(updatingAccountIds.value);
+                    try {
+                        const res = await axios.post(`/api/accounts/${account.id}/update-session`);
+                        alert(`Session updated for ${account.email}!\nNew Session ID: ${res.data.new_session_id?.substring(0, 20)}...`);
+                        fetchAccounts();
+                    } catch (e) {
+                        alert(`Session update failed for ${account.email}: ` + (e.response?.data?.detail || e.message));
+                    } finally {
+                        updatingAccountIds.value.delete(account.id);
+                        // Trigger reactivity
+                        updatingAccountIds.value = new Set(updatingAccountIds.value);
+                    }
+                };
+
+                // Bulk add accounts
+                const openBulkAddModal = () => {
+                    Object.assign(bulkForm, { credentials: '', session_ids: '', region: 'us', points: 120 });
+                    showBulkModal.value = true;
+                };
+
+                const submitBulkAccounts = async () => {
+                    if (bulkLoading.value) return;
+                    bulkLoading.value = true;
+                    try {
+                        const res = await axios.post('/api/accounts/bulk', bulkForm);
+                        const result = res.data;
+                        let msg = `${result.message}`;
+                        if (result.total_skipped > 0) {
+                            msg += `\n跳过 ${result.total_skipped} 个重复账户`;
+                            if (result.skipped.duplicate_in_input.length > 0) {
+                                msg += `\n输入内重复: ${result.skipped.duplicate_in_input.join(', ')}`;
+                            }
+                            if (result.skipped.duplicate_in_db.length > 0) {
+                                msg += `\n数据库已存在: ${result.skipped.duplicate_in_db.join(', ')}`;
+                            }
+                        }
+                        alert(msg);
+                        showBulkModal.value = false;
+                        fetchAccounts();
+                    } catch (e) {
+                        const detail = e.response?.data?.detail;
+                        if (detail && detail.parse_errors) {
+                            alert('格式错误:\n' + detail.parse_errors.join('\n'));
+                        } else {
+                            alert('批量添加失败: ' + (typeof detail === 'string' ? detail : e.message));
+                        }
+                    } finally {
+                        bulkLoading.value = false;
+                    }
+                };
+
+                // Sidebar resize handlers
+                const startResize = (e) => {
+                    isResizing.value = true;
+                    document.addEventListener('mousemove', onResize);
+                    document.addEventListener('mouseup', stopResize);
+                    document.body.style.cursor = 'ew-resize';
+                    document.body.style.userSelect = 'none';
+                };
+
+                const onResize = (e) => {
+                    if (!isResizing.value) return;
+                    const newWidth = e.clientX;
+                    if (newWidth < SIDEBAR_MIN_WIDTH + 20) {
+                        // 宽度小于阈值时自动折叠
+                        sidebarCollapsed.value = true;
+                        stopResize();
+                    } else if (newWidth <= SIDEBAR_MAX_WIDTH) {
+                        sidebarWidth.value = Math.max(newWidth, 120);
+                    }
+                };
+
+                const stopResize = () => {
+                    isResizing.value = false;
+                    document.removeEventListener('mousemove', onResize);
+                    document.removeEventListener('mouseup', stopResize);
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                };
+
                 // Cleanup on unmount
                 onUnmounted(() => {
                     stopAutoRefresh();
+                    stopResize();
                 });
 
                 return {
                     isLoggedIn, password, loginError, login, logout,
-                    currentView,
+                    currentView, sidebarCollapsed, sidebarWidth, isResizing, startResize,
                     accounts, pagination, filters, fetchAccounts, changePage,
                     settings, saveSettings, formatKey,
-                    showModal, modalMode, modalForm, openAddModal, editAccount, submitAccount, deleteAccount, toggleBan
+                    showModal, modalMode, modalForm, openAddModal, editAccount, submitAccount, deleteAccount, toggleBan,
+                    registerLoading, updatingAccountIds, registerAccount, updateSession,
+                    showBulkModal, bulkLoading, bulkForm, openBulkAddModal, submitBulkAccounts, credentialsLineCount, sessionIdsLineCount
                 };
             }
         }).mount('#app');

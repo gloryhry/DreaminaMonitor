@@ -84,7 +84,7 @@ async def update_account_usage(account_id: int, model_name: str):
             
         await db.commit()
 
-async def ban_account_temp(account_id: int, hours: int = 12):
+async def ban_account_temp(account_id: int, hours: int = 4):
     """
     Temporarily ban an account.
     """

@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     LIMIT_NANOBANANAPRO: int = Field(default=1000, description="Daily limit for nanobananapro")
     LIMIT_VIDEO_3_0: int = Field(default=1000, description="Daily limit for video-3.0")
     
+    # Dreamina-register API settings
+    REGISTER_API_URL: str = Field(default="http://localhost:8000", description="Dreamina-register API URL")
+    REGISTER_API_KEY: str = Field(default="", description="Dreamina-register API Key")
+    REGISTER_MAIL_TYPE: str = Field(default="moemail", description="Mail type for registration (moemail/tempmailhub)")
+    DEFAULT_POINTS: float = Field(default=120.0, description="Default points for new accounts")
+    RESET_COUNTS_TIME: str = Field(default="00:00", description="Daily reset time for usage counts (HH:MM format)")
+    
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @classmethod
