@@ -1,0 +1,13 @@
+services:
+  dreamina-monitor:
+    build: .
+    container_name: dreamina-monitor
+    ports:
+      - "5100:5100"
+    volumes:
+      # 数据持久化
+      - ./dreamina.db:/app/dreamina.db
+      - ./config.json:/app/config.json
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
