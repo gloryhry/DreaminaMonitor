@@ -12,7 +12,105 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+# Commerce API URLs (参考 jimeng-api)
+COMMERCE_URL_US = "https://commerce.us.capcut.com"
+COMMERCE_URL_SG = "https://commerce-api-sg.capcut.com"  # HK/JP/SG 共用
+
+# 伪装 Headers (参考 jimeng-api)
+FAKE_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Sec-Ch-Ua": '"Google Chrome";v="142", "Chromium";v="142", "Not_A Brand";v="99"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+}
+
+async def fetch_account_credit(session_id: str, region: str) -> Optional[float]:
+    """
+    获取账户积分信息。
+    CN 区域不支持积分查询，返回 None。
+    
+    Args:
+        session_id: 账户的 session_id（不含区域前缀）
+        region: 账户区域 (us, hk, jp, sg, cn)
+    
+    Returns:
+        总积分 (gift_credit + purchase_credit + vip_credit)，CN 区域返回 None
+    """
+    region_lower = region.lower()
+    
+    # CN 区域不支持积分查询
+    if region_lower == "cn":
+        logger.debug(f"[CreditQuery] 跳过 CN 区域账户积分查询")
+        return None
+    
+    # 根据区域选择 Commerce API
+    if region_lower == "us":
+        base_url = COMMERCE_URL_US
+        aid = 513641
+    else:  # hk, jp, sg
+        base_url = COMMERCE_URL_SG
+        aid = 513641
+    
+    # 构造 Cookie
+    cookie = f"sessionid={session_id}; sessionid_ss={session_id}; sid_tt={session_id}"
+    
+    # 构造请求头
+    headers = {
+        **FAKE_HEADERS,
+        "Cookie": cookie,
+        "Referer": "https://dreamina.capcut.com/",
+        "Origin": "https://dreamina.capcut.com",
+        "Content-Type": "application/json",
+    }
+    
+    url = f"{base_url}/commerce/v1/benefits/user_credit"
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url,
+                json={},
+                headers=headers,
+                params={"aid": aid}
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"[CreditQuery] 积分查询失败: HTTP {response.status_code}")
+                return None
+            
+            data = response.json()
+            
+            # 检查响应
+            if data.get("ret") != "0" and data.get("ret") != 0:
+                logger.warning(f"[CreditQuery] 积分查询返回错误: {data}")
+                return None
+            
+            credit_data = data.get("data", {}).get("credit", {})
+            gift_credit = credit_data.get("gift_credit", 0)
+            purchase_credit = credit_data.get("purchase_credit", 0)
+            vip_credit = credit_data.get("vip_credit", 0)
+            
+            total_credit = gift_credit + purchase_credit + vip_credit
+            logger.info(f"[CreditQuery] 积分查询成功: 赠送={gift_credit}, 购买={purchase_credit}, VIP={vip_credit}, 总计={total_credit}")
+            
+            return float(total_credit)
+            
+    except Exception as e:
+        logger.error(f"[CreditQuery] 积分查询异常: {e}")
+        return None
+
 router = APIRouter()
+
+# 轮询索引
+_round_robin_index = 0
 
 async def get_valid_account(model_name: str, db: AsyncSession) -> Optional[Account]:
     """
@@ -42,26 +140,37 @@ async def get_valid_account(model_name: str, db: AsyncSession) -> Optional[Accou
         field, limit = model_field_map[model_name]
         usage_condition = field < limit
     
+    # 非 nanobanana/nanobananapro 模型时，排除 points 为 0 的账户
+    points_condition = True
+    if model_name not in ["nanobanana", "nanobananapro"]:
+        points_condition = Account.points > 0
+    
     stmt = select(Account).where(
         and_(
             or_(Account.is_banned == False, Account.ban_until < now),
             Account.session_id.isnot(None),
-            usage_condition
+            usage_condition,
+            points_condition
         )
     )
     
     result = await db.execute(stmt)
     accounts = result.scalars().all()
     
+    logger.info(f"[AccountSelect] 模型: {model_name}, 查询到 {len(accounts)} 个可用账户")
+    
     if not accounts:
         return None
         
-    # Random selection for load balancing
-    return random.choice(accounts)
+    # Round-robin selection for load balancing
+    global _round_robin_index
+    _round_robin_index = (_round_robin_index + 1) % len(accounts)
+    return accounts[_round_robin_index]
 
 async def update_account_usage(account_id: int, model_name: str):
     """
     Increment usage counter for the account and model.
+    Also fetch and update account credit (skip CN region).
     """
     async with AsyncSessionLocal() as db:
         account = await db.get(Account, account_id)
@@ -78,6 +187,13 @@ async def update_account_usage(account_id: int, model_name: str):
             account.nanobananapro_count += 1
         elif model_name == "video-3.0":
             account.video_3_0_count += 1
+        
+        # 查询并更新积分（CN 区域跳过）
+        if account.session_id and account.region:
+            credit = await fetch_account_credit(account.session_id, account.region)
+            if credit is not None:
+                account.points = credit
+                logger.info(f"[CreditUpdate] {account.email} 积分已更新: {credit}")
             
         await db.commit()
 

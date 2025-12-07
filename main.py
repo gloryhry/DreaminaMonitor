@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, and_
 from database import init_db, AsyncSessionLocal, Account
 from api import router as api_router
-from proxy import router as proxy_router
+from proxy import router as proxy_router, fetch_account_credit
 from config import settings
 
 # 配置全局日志
@@ -138,18 +138,66 @@ def _get_region_from_session_id(session_id: str) -> str:
     """从 session_id 前缀提取 region"""
     if session_id.startswith("us-"):
         return "us"
-    elif session_id.startswith("eu-"):
-        return "eu"
-    elif session_id.startswith("asia-"):
-        return "asia"
+    elif session_id.startswith("hk-"):
+        return "hk"
+    elif session_id.startswith("jp-"):
+        return "jp"
+    elif session_id.startswith("sg-"):
+        return "sg"
     return "us"
 
 def _strip_region_prefix(session_id: str) -> str:
     """移除 session_id 的 region 前缀"""
-    for prefix in ["us-", "eu-", "asia-"]:
+    for prefix in ["us-", "hk-", "jp-", "sg-"]:
         if session_id.startswith(prefix):
             return session_id[len(prefix):]
     return session_id
+
+async def _update_all_accounts_credit():
+    """批量更新所有非 CN 区域账户的积分"""
+    print("[CreditUpdate] 开始批量更新账户积分...")
+    
+    async with AsyncSessionLocal() as session:
+        # 查询所有非 CN 区域的账户
+        query = select(Account).where(
+            and_(
+                Account.region != "cn",
+                Account.session_id.isnot(None)
+            )
+        )
+        result = await session.execute(query)
+        accounts = result.scalars().all()
+    
+    if not accounts:
+        print("[CreditUpdate] 没有需要更新积分的账户")
+        return
+    
+    print(f"[CreditUpdate] 发现 {len(accounts)} 个非 CN 区域账户需要更新积分")
+    
+    success_count = 0
+    fail_count = 0
+    
+    for account in accounts:
+        try:
+            credit = await fetch_account_credit(account.session_id, account.region)
+            if credit is not None:
+                async with AsyncSessionLocal() as db_session:
+                    db_account = await db_session.get(Account, account.id)
+                    if db_account:
+                        db_account.points = credit
+                        await db_session.commit()
+                success_count += 1
+                print(f"[CreditUpdate] ✓ {account.email} 积分更新: {credit}")
+            else:
+                fail_count += 1
+        except Exception as e:
+            fail_count += 1
+            print(f"[CreditUpdate] ✗ {account.email} 积分查询失败: {e}")
+        
+        # 每次查询之间短暂延迟，避免请求过于密集
+        await asyncio.sleep(0.5)
+    
+    print(f"[CreditUpdate] 批量更新完成: 成功 {success_count}, 失败 {fail_count}")
 
 async def reset_usage_counts_task():
     """后台任务：在设定时间重置所有账户的使用次数"""
@@ -185,6 +233,9 @@ async def reset_usage_counts_task():
                 
                 # Session 自动更新：查询过期账户并批量更新
                 await _auto_update_expired_sessions()
+                
+                # 批量更新所有账户积分（CN 区域跳过）
+                await _update_all_accounts_credit()
         except Exception as e:
             print(f"[ResetCounts] 错误: {e}")
         

@@ -290,17 +290,19 @@ def _get_region_from_session_id(session_id: str) -> str:
     """Extract region from session_id prefix (e.g., 'us-xxx' -> 'us')"""
     if session_id.startswith("us-"):
         return "us"
-    elif session_id.startswith("eu-"):
-        return "eu"
-    elif session_id.startswith("asia-"):
-        return "asia"
+    elif session_id.startswith("hk-"):
+        return "hk"
+    elif session_id.startswith("jp-"):
+        return "jp"
+    elif session_id.startswith("sg-"):
+        return "sg"
     else:
         # Default to 'us' if no recognized prefix
         return "us"
 
 def _strip_region_prefix(session_id: str) -> str:
     """Remove region prefix from session_id (e.g., 'us-abc123' -> 'abc123')"""
-    for prefix in ["us-", "eu-", "asia-"]:
+    for prefix in ["us-", "hk-", "jp-", "sg-"]:
         if session_id.startswith(prefix):
             return session_id[len(prefix):]
     return session_id
