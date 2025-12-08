@@ -197,10 +197,13 @@ async def update_account_usage(account_id: int, model_name: str):
             
         await db.commit()
 
-async def ban_account_temp(account_id: int, hours: int = 4):
+async def ban_account_temp(account_id: int, hours: Optional[float] = None):
     """
     Temporarily ban an account.
     """
+    if hours is None:
+        hours = settings.ACCOUNT_BAN_DURATION_HOURS
+
     async with AsyncSessionLocal() as db:
         account = await db.get(Account, account_id)
         if not account:

@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # 自动注册设置
     AUTO_REGISTER_ENABLED: bool = Field(default=False)
     AUTO_REGISTER_INTERVAL: int = Field(default=3600)
+
+    # 错误处理
+    ACCOUNT_BAN_DURATION_HOURS: float = Field(default=4.0)
     
     @classmethod
     def load_config(cls) -> "Settings":

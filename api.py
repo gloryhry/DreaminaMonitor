@@ -87,6 +87,8 @@ class SettingsUpdate(BaseModel):
     # Auto-register settings
     AUTO_REGISTER_ENABLED: Optional[bool] = None
     AUTO_REGISTER_INTERVAL: Optional[int] = None
+    # Error handling settings
+    ACCOUNT_BAN_DURATION_HOURS: Optional[float] = None
     # Logging settings
     LOG_LEVEL: Optional[str] = None
 
