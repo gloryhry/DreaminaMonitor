@@ -281,36 +281,248 @@
                 </div>
 
                 <!-- Settings View -->
-                <div v-if="currentView === 'settings'" class="max-w-2xl mx-auto">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6">System Settings</h2>
-                    <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-                        <form @submit.prevent="saveSettings" class="space-y-6">
-                            <div v-for="(value, key) in settings" :key="key">
-                                <label class="block text-sm font-medium text-gray-700 mb-1">{{ formatKey(key) }}</label>
-                                <!-- Toggle switch for boolean settings -->
-                                <div v-if="isBooleanSetting(key)" class="flex items-center">
-                                    <button type="button" @click="settings[key] = !settings[key]"
-                                        :class="settings[key] ? 'bg-indigo-600' : 'bg-gray-300'"
-                                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
-                                        <span :class="settings[key] ? 'translate-x-5' : 'translate-x-0'"
+                <!-- Settings View -->
+                <div v-if="currentView === 'settings'" class="max-w-4xl mx-auto pb-20">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">System Settings</h2>
+                        <div class="text-sm text-gray-500">
+                            Configure system parameters, limits, and integrations.
+                        </div>
+                    </div>
+
+                    <form @submit.prevent="saveSettings" class="space-y-6">
+
+                        <!-- 1. System Basics -->
+                        <div
+                            class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition hover:shadow-md">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-indigo-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                                    </path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                </svg>
+                                基础系统配置 (System Basics)
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Admin Password</label>
+                                    <input v-model="settings.ADMIN_PASSWORD" type="password"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition hover:border-indigo-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Log Level</label>
+                                    <select v-model="settings.LOG_LEVEL"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none bg-white transition hover:border-indigo-300">
+                                        <option value="debug">DEBUG</option>
+                                        <option value="info">INFO</option>
+                                        <option value="warning">WARNING</option>
+                                        <option value="error">ERROR</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Host</label>
+                                    <input v-model="settings.HOST" type="text"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition hover:border-indigo-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                                    <input v-model.number="settings.PORT" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition hover:border-indigo-300">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. Network & Storage -->
+                        <div
+                            class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition hover:shadow-md">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9">
+                                    </path>
+                                </svg>
+                                网络与存储 (Network & Storage)
+                            </h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Upstream Base
+                                        URL</label>
+                                    <input v-model="settings.UPSTREAM_BASE_URL" type="text"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition hover:border-indigo-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Database URL</label>
+                                    <input v-model="settings.DATABASE_URL" type="text"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition hover:border-indigo-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Proxy Timeout
+                                        (seconds)</label>
+                                    <input v-model.number="settings.PROXY_TIMEOUT" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition hover:border-indigo-300">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3. Usage Limits -->
+                        <div
+                            class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition hover:shadow-md">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-purple-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                模型使用限制 (Usage Limits)
+                            </h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Jimeng 4.0</label>
+                                    <input v-model.number="settings.LIMIT_JIMENG_4_0" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 outline-none transition hover:border-purple-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Jimeng 4.1</label>
+                                    <input v-model.number="settings.LIMIT_JIMENG_4_1" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 outline-none transition hover:border-purple-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Nanobanana</label>
+                                    <input v-model.number="settings.LIMIT_NANOBANANA" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-amber-500 outline-none transition hover:border-amber-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">NanobananaPro</label>
+                                    <input v-model.number="settings.LIMIT_NANOBANANAPRO" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-amber-500 outline-none transition hover:border-amber-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Video 3.0</label>
+                                    <input v-model.number="settings.LIMIT_VIDEO_3_0" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-cyan-500 outline-none transition hover:border-cyan-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Reset Time
+                                        (HH:MM)</label>
+                                    <input v-model="settings.RESET_COUNTS_TIME" type="time"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition hover:border-indigo-300">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4. Registration Service -->
+                        <div
+                            class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition hover:shadow-md">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-emerald-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z">
+                                    </path>
+                                </svg>
+                                注册服务 (Registration)
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="md:col-span-2">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Registration API
+                                        URL</label>
+                                    <input v-model="settings.REGISTER_API_URL" type="text" placeholder="https://..."
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 outline-none transition hover:border-emerald-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Registration API
+                                        Key</label>
+                                    <input v-model="settings.REGISTER_API_KEY" type="password"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 outline-none transition hover:border-emerald-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Mail Type</label>
+                                    <select v-model="settings.REGISTER_MAIL_TYPE"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 outline-none bg-white transition hover:border-emerald-300">
+                                        <option value="moemail">Moemail</option>
+                                        <option value="tempmailhub">TempMailHub</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Default Points</label>
+                                    <input v-model.number="settings.DEFAULT_POINTS" type="number" step="0.1"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 outline-none transition hover:border-emerald-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Auto Register Interval
+                                        (sec)</label>
+                                    <input v-model.number="settings.AUTO_REGISTER_INTERVAL" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 outline-none transition hover:border-emerald-300">
+                                </div>
+                                <div
+                                    class="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                    <div>
+                                        <span class="block text-sm font-medium text-gray-700">Auto Registration</span>
+                                        <span class="text-xs text-gray-500">Enable automatic account creation</span>
+                                    </div>
+                                    <button type="button"
+                                        @click="settings.AUTO_REGISTER_ENABLED = !settings.AUTO_REGISTER_ENABLED"
+                                        :class="settings.AUTO_REGISTER_ENABLED ? 'bg-emerald-500' : 'bg-gray-300'"
+                                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out">
+                                        <span
+                                            :class="settings.AUTO_REGISTER_ENABLED ? 'translate-x-5' : 'translate-x-0'"
                                             class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                                     </button>
-                                    <span class="ml-3 text-sm"
-                                        :class="settings[key] ? 'text-indigo-600 font-medium' : 'text-gray-500'">
-                                        {{ settings[key] ? 'Enabled' : 'Disabled' }}
-                                    </span>
                                 </div>
-                                <!-- Text input for other settings -->
-                                <input v-else v-model="settings[key]" type="text"
-                                    class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none">
                             </div>
-                            <div class="pt-4">
-                                <button type="submit"
-                                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition shadow-lg shadow-indigo-200">Save
-                                    Configuration</button>
+                        </div>
+
+                        <!-- 5. Maintenance -->
+                        <div
+                            class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition hover:shadow-md">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-rose-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z">
+                                    </path>
+                                </svg>
+                                维护策略 (Maintenance)
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Session Update
+                                        Days</label>
+                                    <input v-model.number="settings.SESSION_UPDATE_DAYS" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Session Batch
+                                        Size</label>
+                                    <input v-model.number="settings.SESSION_UPDATE_BATCH_SIZE" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Ban Duration
+                                        (Hours)</label>
+                                    <input v-model.number="settings.ACCOUNT_BAN_DURATION_HOURS" type="number" step="0.1"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
+                                </div>
                             </div>
-                        </form>
-                    </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="fixed bottom-6 right-6 z-40">
+                            <button type="submit"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-full shadow-lg shadow-indigo-200 transition-all hover:scale-105 active:scale-95 flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4">
+                                    </path>
+                                </svg>
+                                保存配置 (Save Configuration)
+                            </button>
+                        </div>
+                    </form>
                 </div>
 
             </main>
@@ -602,16 +814,6 @@
                     }
                 };
 
-                const formatKey = (key) => {
-                    return key.replace(/_/g, ' ');
-                };
-
-                // Check if a setting is a boolean type
-                const isBooleanSetting = (key) => {
-                    const booleanKeys = ['AUTO_REGISTER_ENABLED'];
-                    return booleanKeys.includes(key);
-                };
-
                 // Register a new account via Dreamina-register API
                 const registerAccount = async () => {
                     if (registerLoading.value) return;
@@ -722,7 +924,7 @@
                     isLoggedIn, password, loginError, login, logout,
                     currentView, sidebarCollapsed, sidebarWidth, isResizing, startResize,
                     accounts, pagination, filters, fetchAccounts, changePage,
-                    settings, saveSettings, formatKey, isBooleanSetting,
+                    settings, saveSettings,
                     showModal, modalMode, modalForm, openAddModal, editAccount, submitAccount, deleteAccount, toggleBan,
                     registerLoading, updatingAccountIds, registerAccount, updateSession,
                     showBulkModal, bulkLoading, bulkForm, openBulkAddModal, submitBulkAccounts, credentialsLineCount, sessionIdsLineCount
