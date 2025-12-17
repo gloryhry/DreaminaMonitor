@@ -507,6 +507,28 @@
                                     <input v-model.number="settings.ACCOUNT_BAN_DURATION_HOURS" type="number" step="0.1"
                                         class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
                                 </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Points Update Interval
+                                        (sec)</label>
+                                    <input v-model.number="settings.POINTS_UPDATE_INTERVAL" type="number"
+                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
+                                </div>
+                                <div
+                                    class="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200 md:col-span-2">
+                                    <div>
+                                        <span class="block text-sm font-medium text-gray-700">Auto Points Update</span>
+                                        <span class="text-xs text-gray-500">Enable scheduled points refresh for all
+                                            accounts</span>
+                                    </div>
+                                    <button type="button"
+                                        @click="settings.POINTS_UPDATE_ENABLED = !settings.POINTS_UPDATE_ENABLED"
+                                        :class="settings.POINTS_UPDATE_ENABLED ? 'bg-rose-500' : 'bg-gray-300'"
+                                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out">
+                                        <span
+                                            :class="settings.POINTS_UPDATE_ENABLED ? 'translate-x-5' : 'translate-x-0'"
+                                            class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 

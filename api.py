@@ -91,6 +91,9 @@ class SettingsUpdate(BaseModel):
     ACCOUNT_BAN_DURATION_HOURS: Optional[float] = None
     # Logging settings
     LOG_LEVEL: Optional[str] = None
+    # Points update settings
+    POINTS_UPDATE_ENABLED: Optional[bool] = None
+    POINTS_UPDATE_INTERVAL: Optional[int] = None
 
 # Account Endpoints
 @router.get("/accounts", response_model=PaginatedAccounts)

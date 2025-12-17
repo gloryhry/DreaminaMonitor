@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # 错误处理
     ACCOUNT_BAN_DURATION_HOURS: float = Field(default=4.0)
     
+    # 定时积分更新设置
+    POINTS_UPDATE_ENABLED: bool = Field(default=False)
+    POINTS_UPDATE_INTERVAL: int = Field(default=3600)  # 更新间隔（秒），默认1小时
+    
     @classmethod
     def load_config(cls) -> "Settings":
         """从 config.json 加载配置"""

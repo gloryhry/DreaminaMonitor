@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 _unban_task = None
 _reset_counts_task = None
 _auto_register_task = None
+_points_update_task = None
 
 async def unban_accounts_task():
     """后台任务：每分钟检查并解禁到期账户"""
@@ -180,19 +181,31 @@ async def _update_all_accounts_credit():
     for account in accounts:
         try:
             credit = await fetch_account_credit(account.session_id, account.region)
-            if credit is not None:
+            async with AsyncSessionLocal() as db_session:
+                db_account = await db_session.get(Account, account.id)
+                if db_account:
+                    if credit is not None:
+                        db_account.points = credit
+                        success_count += 1
+                        print(f"[CreditUpdate] ✓ {account.email} 积分更新: {credit}")
+                    else:
+                        # 查询失败，将 points 设为 0
+                        db_account.points = 0
+                        fail_count += 1
+                        print(f"[CreditUpdate] ✗ {account.email} 查询失败，积分设为 0")
+                    await db_session.commit()
+        except Exception as e:
+            # 异常时将 points 设为 0
+            try:
                 async with AsyncSessionLocal() as db_session:
                     db_account = await db_session.get(Account, account.id)
                     if db_account:
-                        db_account.points = credit
+                        db_account.points = 0
                         await db_session.commit()
-                success_count += 1
-                print(f"[CreditUpdate] ✓ {account.email} 积分更新: {credit}")
-            else:
-                fail_count += 1
-        except Exception as e:
+            except:
+                pass
             fail_count += 1
-            print(f"[CreditUpdate] ✗ {account.email} 积分查询失败: {e}")
+            print(f"[CreditUpdate] ✗ {account.email} 积分查询失败: {e}，积分设为 0")
         
         # 每次查询之间短暂延迟，避免请求过于密集
         await asyncio.sleep(0.5)
@@ -362,17 +375,45 @@ async def auto_register_task():
             print(f"[AutoRegister] 错误: {e}")
             await asyncio.sleep(60)
 
+async def points_update_task():
+    """后台任务：按配置间隔定时更新所有账户积分"""
+    from config import Settings
+    
+    while True:
+        try:
+            # 重新加载配置以获取最新设置
+            current_settings = Settings.load_config()
+            
+            if not current_settings.POINTS_UPDATE_ENABLED:
+                # 定时积分更新未开启，等待后重新检查
+                await asyncio.sleep(60)
+                continue
+            
+            print(f"[PointsUpdate] 定时积分更新任务开始，间隔: {current_settings.POINTS_UPDATE_INTERVAL} 秒")
+            
+            # 执行积分更新
+            await _update_all_accounts_credit()
+            
+            # 等待配置的间隔时间
+            await asyncio.sleep(current_settings.POINTS_UPDATE_INTERVAL)
+            
+        except Exception as e:
+            print(f"[PointsUpdate] 错误: {e}")
+            await asyncio.sleep(60)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _unban_task, _reset_counts_task, _auto_register_task
+    global _unban_task, _reset_counts_task, _auto_register_task, _points_update_task
     # Startup
     await init_db()
     _unban_task = asyncio.create_task(unban_accounts_task())
     _reset_counts_task = asyncio.create_task(reset_usage_counts_task())
     _auto_register_task = asyncio.create_task(auto_register_task())
+    _points_update_task = asyncio.create_task(points_update_task())
     print("[AutoUnban] 后台任务已启动")
     print(f"[ResetCounts] 后台任务已启动，重置时间: {settings.RESET_COUNTS_TIME}")
     print("[AutoRegister] 后台任务已启动")
+    print("[PointsUpdate] 后台任务已启动")
     yield
     # Shutdown
     if _unban_task:
@@ -396,6 +437,13 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         print("[AutoRegister] 后台任务已停止")
+    if _points_update_task:
+        _points_update_task.cancel()
+        try:
+            await _points_update_task
+        except asyncio.CancelledError:
+            pass
+        print("[PointsUpdate] 后台任务已停止")
 
 app = FastAPI(lifespan=lifespan)
 
