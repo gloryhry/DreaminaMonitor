@@ -140,10 +140,8 @@ async def get_valid_account(model_name: str, db: AsyncSession) -> Optional[Accou
         field, limit = model_field_map[model_name]
         usage_condition = field < limit
     
-    # 非 nanobanana/nanobananapro 模型时，排除 points 为 0 的账户
-    points_condition = True
-    if model_name not in ["nanobanana", "nanobananapro"]:
-        points_condition = Account.points > 0
+    # 排除 points <= 0 的账户
+    points_condition = Account.points > 0
     
     stmt = select(Account).where(
         and_(
