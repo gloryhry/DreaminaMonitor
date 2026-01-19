@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from database import get_db, Account
 from config import settings
+from proxy import fetch_account_credit
 
 router = APIRouter(prefix="/api")
 
@@ -94,6 +95,30 @@ class SettingsUpdate(BaseModel):
     # Points update settings
     POINTS_UPDATE_ENABLED: Optional[bool] = None
     POINTS_UPDATE_INTERVAL: Optional[int] = None
+    # Account selection strategy
+    MIN_CALL_POINTS: Optional[float] = None
+
+class AccountIdsResponse(BaseModel):
+    total: int
+    ids: List[int]
+
+class BulkIdsRequest(BaseModel):
+    ids: List[int] = Field(min_length=1)
+
+class BulkRefreshPointsRequest(BulkIdsRequest):
+    delay_seconds: float = Field(default=0.5, ge=0.0, le=10.0)
+
+class BulkUpdateSessionRequest(BulkIdsRequest):
+    concurrency: int = Field(default=5, ge=1, le=20)
+
+def _apply_account_filters(query, region: Optional[str], email: Optional[str], points_lt: Optional[float]):
+    if region:
+        query = query.where(Account.region == region)
+    if email:
+        query = query.where(Account.email.contains(email))
+    if points_lt is not None:
+        query = query.where(Account.points < points_lt)
+    return query
 
 # Account Endpoints
 @router.get("/accounts", response_model=PaginatedAccounts)
@@ -102,14 +127,10 @@ async def get_accounts(
     size: int = Query(100, ge=1, le=1000),
     region: Optional[str] = None,
     email: Optional[str] = None,
+    points_lt: Optional[float] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    query = select(Account)
-    
-    if region:
-        query = query.where(Account.region == region)
-    if email:
-        query = query.where(Account.email.contains(email))
+    query = _apply_account_filters(select(Account), region, email, points_lt)
     
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
@@ -126,6 +147,29 @@ async def get_accounts(
         "size": size,
         "items": accounts
     }
+
+@router.get("/accounts/ids", response_model=AccountIdsResponse)
+async def get_account_ids(
+    region: Optional[str] = None,
+    email: Optional[str] = None,
+    points_lt: Optional[float] = None,
+    limit: int = Query(50000, ge=1, le=50000),
+    db: AsyncSession = Depends(get_db),
+):
+    query = _apply_account_filters(select(Account.id), region, email, points_lt)
+
+    count_query = select(func.count()).select_from(query.subquery())
+    total = await db.scalar(count_query)
+
+    result = await db.execute(query.limit(limit + 1))
+    ids = result.scalars().all()
+    if len(ids) > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many accounts ({total}), please narrow your filters",
+        )
+
+    return {"total": total, "ids": ids}
 
 @router.post("/accounts", response_model=AccountResponse)
 async def create_account(account: AccountCreate, db: AsyncSession = Depends(get_db)):
@@ -170,6 +214,63 @@ async def delete_account(id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(db_account)
     await db.commit()
     return {"message": "Account deleted"}
+
+@router.post("/accounts/bulk-delete")
+async def bulk_delete_accounts(data: BulkIdsRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(delete(Account).where(Account.id.in_(data.ids)))
+    await db.commit()
+    return {"deleted": result.rowcount or 0}
+
+@router.post("/accounts/bulk-update-points")
+async def bulk_refresh_points(data: BulkRefreshPointsRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Account).where(Account.id.in_(data.ids)))
+    accounts = result.scalars().all()
+    accounts_by_id = {acc.id: acc for acc in accounts}
+    missing_ids = sorted(set(data.ids) - set(accounts_by_id.keys()))
+
+    updated_count = 0
+    failed_count = 0
+    skipped_count = 0
+    failures = []
+
+    for acc in accounts:
+        try:
+            if not acc.session_id or (acc.region and acc.region.lower() == "cn"):
+                skipped_count += 1
+                continue
+
+            credit = await fetch_account_credit(acc.session_id, acc.region)
+            if credit is None:
+                acc.points = 0
+                failed_count += 1
+                if len(failures) < 20:
+                    failures.append({"id": acc.id, "email": acc.email, "error": "credit query failed"})
+            else:
+                acc.points = credit
+                acc.updated_at = datetime.now()
+                updated_count += 1
+
+            await db.commit()
+        except Exception as e:
+            try:
+                acc.points = 0
+                await db.commit()
+            except Exception:
+                await db.rollback()
+            failed_count += 1
+            if len(failures) < 20:
+                failures.append({"id": acc.id, "email": acc.email, "error": str(e)})
+        finally:
+            if data.delay_seconds:
+                await asyncio.sleep(data.delay_seconds)
+
+    return {
+        "updated_count": updated_count,
+        "failed_count": failed_count,
+        "skipped_count": skipped_count,
+        "missing_ids": missing_ids,
+        "failures": failures,
+    }
 
 @router.post("/accounts/bulk")
 async def bulk_create_accounts(data: BulkAccountCreate, db: AsyncSession = Depends(get_db)):
@@ -312,6 +413,38 @@ def _strip_region_prefix(session_id: str) -> str:
             return session_id[len(prefix):]
     return session_id
 
+async def _fetch_new_session_id(
+    client: httpx.AsyncClient,
+    *,
+    base_url: str,
+    headers: dict,
+    email: str,
+    password: str,
+) -> tuple[str, str]:
+    try:
+        resp = await client.post(
+            f"{base_url}/session/update",
+            json={"email": email, "password": password},
+            headers=headers,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Session update API error: {e.response.text}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
+
+    new_session_id = result.get("session_id")
+    if not new_session_id:
+        raise HTTPException(status_code=500, detail="No session_id returned from API")
+
+    new_region = _get_region_from_session_id(new_session_id)
+    clean_session_id = _strip_region_prefix(new_session_id)
+    return clean_session_id, new_region
+
 @router.post("/register-account")
 async def register_account(db: AsyncSession = Depends(get_db)):
     """
@@ -428,28 +561,15 @@ async def update_account_session(id: int, db: AsyncSession = Depends(get_db)):
     
     base_url = settings.REGISTER_API_URL.rstrip("/")
     headers = {"Authorization": f"Bearer {settings.REGISTER_API_KEY}"}
-    
+
     async with httpx.AsyncClient(timeout=120.0) as client:
-        try:
-            resp = await client.post(
-                f"{base_url}/session/update",
-                json={"email": db_account.email, "password": db_account.password},
-                headers=headers
-            )
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=f"Session update API error: {e.response.text}")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
-        
-        new_session_id = result.get("session_id")
-        if not new_session_id:
-            raise HTTPException(status_code=500, detail="No session_id returned from API")
-        
-        # Strip region prefix before storing in database
-        new_region = _get_region_from_session_id(new_session_id)
-        clean_session_id = _strip_region_prefix(new_session_id)
+        clean_session_id, new_region = await _fetch_new_session_id(
+            client,
+            base_url=base_url,
+            headers=headers,
+            email=db_account.email,
+            password=db_account.password,
+        )
         
         # Update database
         old_session_id = db_account.session_id
@@ -466,6 +586,71 @@ async def update_account_session(id: int, db: AsyncSession = Depends(get_db)):
             "new_session_id": clean_session_id,
             "session_id_updated_at": db_account.session_id_updated_at.isoformat()
         }
+
+@router.post("/accounts/bulk-update-session")
+async def bulk_update_account_sessions(
+    data: BulkUpdateSessionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.REGISTER_API_URL or not settings.REGISTER_API_KEY:
+        raise HTTPException(status_code=400, detail="Dreamina-register API not configured")
+
+    result = await db.execute(select(Account).where(Account.id.in_(data.ids)))
+    accounts = result.scalars().all()
+    accounts_by_id = {acc.id: acc for acc in accounts}
+    missing_ids = sorted(set(data.ids) - set(accounts_by_id.keys()))
+
+    base_url = settings.REGISTER_API_URL.rstrip("/")
+    headers = {"Authorization": f"Bearer {settings.REGISTER_API_KEY}"}
+    sem = asyncio.Semaphore(data.concurrency)
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        async def _run(acc: Account):
+            async with sem:
+                try:
+                    clean_session_id, new_region = await _fetch_new_session_id(
+                        client,
+                        base_url=base_url,
+                        headers=headers,
+                        email=acc.email,
+                        password=acc.password,
+                    )
+                    return {
+                        "id": acc.id,
+                        "email": acc.email,
+                        "new_session_id": clean_session_id,
+                        "new_region": new_region,
+                        "error": None,
+                    }
+                except HTTPException as e:
+                    return {"id": acc.id, "email": acc.email, "error": e.detail}
+                except Exception as e:
+                    return {"id": acc.id, "email": acc.email, "error": str(e)}
+
+        results = await asyncio.gather(*[_run(acc) for acc in accounts])
+
+    updated_count = 0
+    failures = []
+    now = datetime.now()
+    for r in results:
+        if r.get("error"):
+            failures.append(r)
+            continue
+        acc = accounts_by_id[r["id"]]
+        acc.session_id = r["new_session_id"]
+        acc.session_id_updated_at = now
+        acc.region = r["new_region"]
+        updated_count += 1
+
+    if updated_count > 0:
+        await db.commit()
+
+    return {
+        "updated_count": updated_count,
+        "failed_count": len(failures),
+        "missing_ids": missing_ids,
+        "failures": failures,
+    }
 
 # Settings Endpoints
 @router.get("/settings")

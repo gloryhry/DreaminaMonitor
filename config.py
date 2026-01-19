@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # 定时积分更新设置
     POINTS_UPDATE_ENABLED: bool = Field(default=False)
     POINTS_UPDATE_INTERVAL: int = Field(default=3600)  # 更新间隔（秒），默认1小时
+
+    # 账户选择策略
+    MIN_CALL_POINTS: float = Field(default=1.0)
     
     @classmethod
     def load_config(cls) -> "Settings":

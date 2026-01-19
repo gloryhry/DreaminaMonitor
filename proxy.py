@@ -140,8 +140,8 @@ async def get_valid_account(model_name: str, db: AsyncSession) -> Optional[Accou
         field, limit = model_field_map[model_name]
         usage_condition = field < limit
     
-    # 排除 points <= 0 的账户
-    points_condition = Account.points > 0
+    # 排除 points <= 0 的账户；同时应用最小可调用积分阈值
+    points_condition = and_(Account.points > 0, Account.points >= settings.MIN_CALL_POINTS)
     
     stmt = select(Account).where(
         and_(

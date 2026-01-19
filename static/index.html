@@ -168,8 +168,47 @@
                             <option value="jp">JP</option>
                             <option value="sg">SG</option>
                         </select>
-                        <button @click="fetchAccounts"
+                        <input v-model.number="filters.points_lt" type="number" step="0.1" placeholder="Points <"
+                            class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none w-36">
+                        <button @click="applyFilters"
                             class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition">Filter</button>
+                    </div>
+
+                    <!-- Bulk Actions -->
+                    <div
+                        class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-sm text-gray-600">Selected: <span class="font-semibold text-gray-900">{{
+                                    selectedCount }}</span></span>
+                            <button @click="toggleSelectAllOnPage" :disabled="accounts.length === 0"
+                                class="px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 rounded-lg text-gray-700 transition text-sm">
+                                {{ isAllOnPageSelected ? 'Deselect Page' : 'Select Page' }}
+                            </button>
+                            <button @click="selectAllFiltered" :disabled="bulkSelectLoading"
+                                class="px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 rounded-lg text-gray-700 transition text-sm">
+                                {{ bulkSelectLoading ? 'Selecting...' : 'Select Filtered' }}
+                            </button>
+                            <button @click="clearSelection" :disabled="selectedCount === 0"
+                                class="px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 rounded-lg text-gray-700 transition text-sm">
+                                Clear
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <button @click="bulkUpdatePointsSelected"
+                                :disabled="selectedCount === 0 || bulkActionLoading"
+                                class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg transition text-sm">
+                                Update Points
+                            </button>
+                            <button @click="bulkUpdateSessionSelected"
+                                :disabled="selectedCount === 0 || bulkSessionUpdateLoading"
+                                class="px-3 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white rounded-lg transition text-sm">
+                                {{ bulkSessionUpdateLoading ? 'Updating...' : 'Update SessionID' }}
+                            </button>
+                            <button @click="bulkDeleteSelected" :disabled="selectedCount === 0 || bulkActionLoading"
+                                class="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition text-sm">
+                                Delete
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Table Container -->
@@ -180,13 +219,21 @@
                                 <thead
                                     class="bg-gray-50 text-gray-700 font-semibold uppercase text-xs sticky top-0 z-20">
                                     <tr>
-                                        <th class="px-4 py-3 sticky left-0 top-0 bg-gray-50 z-30 min-w-[200px]">Email
+                                        <th
+                                            class="px-4 py-3 sticky left-0 top-0 bg-gray-50 z-30 w-[48px] min-w-[48px]">
+                                            <input type="checkbox" :checked="isAllOnPageSelected"
+                                                @change="toggleSelectAllOnPage"
+                                                class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                         </th>
-                                        <th class="px-4 py-3 sticky left-[200px] top-0 bg-gray-50 z-30 min-w-[80px]">
+                                        <th
+                                            class="px-4 py-3 sticky left-[48px] top-0 bg-gray-50 z-30 w-[200px] min-w-[200px]">
+                                            Email</th>
+                                        <th
+                                            class="px-4 py-3 sticky left-[248px] top-0 bg-gray-50 z-30 w-[80px] min-w-[80px]">
                                             Status
                                         </th>
                                         <th
-                                            class="px-4 py-3 sticky left-[280px] top-0 bg-gray-50 z-30 min-w-[240px] text-right">
+                                            class="px-4 py-3 sticky left-[328px] top-0 bg-gray-50 z-30 w-[240px] min-w-[240px] text-right">
                                             Actions</th>
                                         <th class="px-4 py-3 min-w-[60px]">ID</th>
                                         <th class="px-4 py-3 min-w-[80px]">Region</th>
@@ -204,15 +251,23 @@
                                 <tbody class="divide-y divide-gray-100">
                                     <tr v-for="account in accounts" :key="account.id"
                                         class="hover:bg-gray-50 transition">
-                                        <td class="px-4 py-3 sticky left-0 bg-white z-10 font-medium text-gray-900">{{
-                                            account.email }}</td>
-                                        <td class="px-4 py-3 sticky left-[200px] bg-white z-10">
+                                        <td
+                                            class="px-4 py-3 sticky left-0 bg-white z-10 w-[48px] min-w-[48px] text-center">
+                                            <input type="checkbox" :checked="selectedAccountIds.has(account.id)"
+                                                @change="toggleAccountSelection(account.id)"
+                                                class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        </td>
+                                        <td
+                                            class="px-4 py-3 sticky left-[48px] bg-white z-10 w-[200px] min-w-[200px] font-medium text-gray-900">
+                                            {{ account.email }}</td>
+                                        <td class="px-4 py-3 sticky left-[248px] bg-white z-10 w-[80px] min-w-[80px]">
                                             <span v-if="account.is_banned"
                                                 class="px-2 py-1 bg-red-50 text-red-600 rounded text-xs font-bold">Banned</span>
                                             <span v-else
                                                 class="px-2 py-1 bg-green-50 text-green-600 rounded text-xs font-bold">Active</span>
                                         </td>
-                                        <td class="px-4 py-3 sticky left-[280px] bg-white z-10 text-right space-x-2">
+                                        <td
+                                            class="px-4 py-3 sticky left-[328px] bg-white z-10 w-[240px] min-w-[240px] text-right space-x-2">
                                             <button @click="updateSession(account)"
                                                 :disabled="updatingAccountIds.has(account.id)"
                                                 class="text-teal-600 hover:text-teal-800 disabled:text-teal-400 font-medium">
@@ -258,7 +313,7 @@
                                             Date(account.ban_until).toLocaleString() : '-' }}</td>
                                     </tr>
                                     <tr v-if="accounts.length === 0">
-                                        <td colspan="14" class="px-6 py-8 text-center text-gray-400">No accounts found
+                                        <td colspan="15" class="px-6 py-8 text-center text-gray-400">No accounts found
                                         </td>
                                     </tr>
                                 </tbody>
@@ -507,14 +562,19 @@
                                     <input v-model.number="settings.ACCOUNT_BAN_DURATION_HOURS" type="number" step="0.1"
                                         class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
                                 </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Points Update Interval
-                                        (sec)</label>
-                                    <input v-model.number="settings.POINTS_UPDATE_INTERVAL" type="number"
-                                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
-                                </div>
-                                <div
-                                    class="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200 md:col-span-2">
+								<div>
+									<label class="block text-sm font-medium text-gray-700 mb-1">Points Update Interval
+										(sec)</label>
+									<input v-model.number="settings.POINTS_UPDATE_INTERVAL" type="number"
+										class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-gray-700 mb-1">Min Call Points</label>
+									<input v-model.number="settings.MIN_CALL_POINTS" type="number" step="0.1"
+										class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-rose-500 outline-none transition hover:border-rose-300">
+								</div>
+								<div
+									class="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200 md:col-span-2">
                                     <div>
                                         <span class="block text-sm font-medium text-gray-700">Auto Points Update</span>
                                         <span class="text-xs text-gray-500">Enable scheduled points refresh for all
@@ -682,7 +742,17 @@
 
                 const accounts = ref([]);
                 const pagination = reactive({ page: 1, size: 100, total: 0 });
-                const filters = reactive({ email: '', region: '' });
+                const filters = reactive({ email: '', region: '', points_lt: null });
+
+                const selectedAccountIds = ref(new Set());
+                const selectedCount = Vue.computed(() => selectedAccountIds.value.size);
+                const isAllOnPageSelected = Vue.computed(() => {
+                    return accounts.value.length > 0 && accounts.value.every(a => selectedAccountIds.value.has(a.id));
+                });
+
+                const bulkSelectLoading = ref(false);
+                const bulkActionLoading = ref(false);
+                const bulkSessionUpdateLoading = ref(false);
 
                 const settings = ref({});
 
@@ -753,15 +823,65 @@
                     }
                 };
 
+                const buildAccountFilterParams = () => {
+                    const params = {};
+                    if (filters.email) params.email = filters.email;
+                    if (filters.region) params.region = filters.region;
+                    if (typeof filters.points_lt === 'number' && !Number.isNaN(filters.points_lt)) {
+                        params.points_lt = filters.points_lt;
+                    }
+                    return params;
+                };
+
+                const toggleAccountSelection = (id) => {
+                    const next = new Set(selectedAccountIds.value);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    selectedAccountIds.value = next;
+                };
+
+                const toggleSelectAllOnPage = () => {
+                    const next = new Set(selectedAccountIds.value);
+                    if (isAllOnPageSelected.value) {
+                        for (const acc of accounts.value) next.delete(acc.id);
+                    } else {
+                        for (const acc of accounts.value) next.add(acc.id);
+                    }
+                    selectedAccountIds.value = next;
+                };
+
+                const clearSelection = () => {
+                    selectedAccountIds.value = new Set();
+                };
+
+                const selectAllFiltered = async () => {
+                    if (bulkSelectLoading.value) return;
+                    bulkSelectLoading.value = true;
+                    try {
+                        const res = await axios.get('/api/accounts/ids', { params: buildAccountFilterParams() });
+                        selectedAccountIds.value = new Set(res.data.ids || []);
+                    } catch (e) {
+                        alert('Select filtered failed: ' + (e.response?.data?.detail || e.message));
+                    } finally {
+                        bulkSelectLoading.value = false;
+                    }
+                };
+
                 const fetchAccounts = async () => {
                     try {
-                        const params = { page: pagination.page, size: pagination.size, ...filters };
+                        const params = { page: pagination.page, size: pagination.size, ...buildAccountFilterParams() };
                         const res = await axios.get('/api/accounts', { params });
                         accounts.value = res.data.items;
                         pagination.total = res.data.total;
                     } catch (e) {
                         console.error(e);
                     }
+                };
+
+                const applyFilters = () => {
+                    pagination.page = 1;
+                    clearSelection();
+                    fetchAccounts();
                 };
 
                 const changePage = (delta) => {
@@ -820,6 +940,67 @@
                         fetchAccounts();
                     } catch (e) {
                         alert('Error deleting account');
+                    }
+                };
+
+                const bulkDeleteSelected = async () => {
+                    if (bulkActionLoading.value) return;
+                    const ids = Array.from(selectedAccountIds.value);
+                    if (ids.length === 0) return;
+                    if (!confirm(`Delete ${ids.length} accounts?`)) return;
+                    bulkActionLoading.value = true;
+                    try {
+                        const res = await axios.post('/api/accounts/bulk-delete', { ids });
+                        alert(`Deleted: ${res.data.deleted ?? 0}`);
+                        clearSelection();
+                        fetchAccounts();
+                    } catch (e) {
+                        alert('Bulk delete failed: ' + (e.response?.data?.detail || e.message));
+                    } finally {
+                        bulkActionLoading.value = false;
+                    }
+                };
+
+                const bulkUpdatePointsSelected = async () => {
+                    if (bulkActionLoading.value) return;
+                    const ids = Array.from(selectedAccountIds.value);
+                    if (ids.length === 0) return;
+                    if (!confirm(`Refresh points for ${ids.length} accounts?`)) return;
+                    bulkActionLoading.value = true;
+                    try {
+                        const res = await axios.post('/api/accounts/bulk-update-points', { ids });
+                        const { updated_count, failed_count, skipped_count, missing_ids } = res.data || {};
+                        let msg = `Updated: ${updated_count ?? 0}`;
+                        if ((failed_count ?? 0) > 0) msg += `\nFailed: ${failed_count}`;
+                        if ((skipped_count ?? 0) > 0) msg += `\nSkipped: ${skipped_count}`;
+                        if (missing_ids?.length) msg += `\nMissing IDs: ${missing_ids.join(', ')}`;
+                        alert(msg);
+                        fetchAccounts();
+                    } catch (e) {
+                        alert('Bulk update points failed: ' + (e.response?.data?.detail || e.message));
+                    } finally {
+                        bulkActionLoading.value = false;
+                    }
+                };
+
+                const bulkUpdateSessionSelected = async () => {
+                    if (bulkSessionUpdateLoading.value) return;
+                    const ids = Array.from(selectedAccountIds.value);
+                    if (ids.length === 0) return;
+                    if (!confirm(`Update SessionID for ${ids.length} accounts?`)) return;
+                    bulkSessionUpdateLoading.value = true;
+                    try {
+                        const res = await axios.post('/api/accounts/bulk-update-session', { ids });
+                        const { updated_count, failed_count, missing_ids } = res.data || {};
+                        let msg = `Updated: ${updated_count ?? 0}`;
+                        if ((failed_count ?? 0) > 0) msg += `\nFailed: ${failed_count}`;
+                        if (missing_ids?.length) msg += `\nMissing IDs: ${missing_ids.join(', ')}`;
+                        alert(msg);
+                        fetchAccounts();
+                    } catch (e) {
+                        alert('Bulk update session failed: ' + (e.response?.data?.detail || e.message));
+                    } finally {
+                        bulkSessionUpdateLoading.value = false;
                     }
                 };
 
@@ -945,7 +1126,10 @@
                 return {
                     isLoggedIn, password, loginError, login, logout,
                     currentView, sidebarCollapsed, sidebarWidth, isResizing, startResize,
-                    accounts, pagination, filters, fetchAccounts, changePage,
+                    accounts, pagination, filters, fetchAccounts, applyFilters, changePage,
+                    selectedAccountIds, selectedCount, isAllOnPageSelected, toggleAccountSelection, toggleSelectAllOnPage, clearSelection,
+                    selectAllFiltered, bulkSelectLoading, bulkActionLoading, bulkSessionUpdateLoading,
+                    bulkDeleteSelected, bulkUpdatePointsSelected, bulkUpdateSessionSelected,
                     settings, saveSettings,
                     showModal, modalMode, modalForm, openAddModal, editAccount, submitAccount, deleteAccount, toggleBan,
                     registerLoading, updatingAccountIds, registerAccount, updateSession,

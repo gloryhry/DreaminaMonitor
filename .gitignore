@@ -33,3 +33,4 @@ config.json
 # AI Memory
 .ai_memory/
 .spec-workflow/
+.serena/
