@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, and_
 from database import init_db, AsyncSessionLocal, Account
 from api import router as api_router
-from proxy import router as proxy_router, fetch_account_credit
+from proxy import router as proxy_router, fetch_account_credit, receive_daily_credit
 from config import settings
 
 # 配置全局日志
@@ -212,6 +212,53 @@ async def _update_all_accounts_credit():
     
     print(f"[CreditUpdate] 批量更新完成: 成功 {success_count}, 失败 {fail_count}")
 
+async def _receive_all_accounts_credit():
+    """批量为所有非 CN 区域账户领取今日积分"""
+    print("[DailyCredit] 开始批量领取今日积分...")
+    
+    async with AsyncSessionLocal() as session:
+        # 查询所有非 CN 区域的账户
+        query = select(Account).where(
+            and_(
+                Account.region != "cn",
+                Account.session_id.isnot(None)
+            )
+        )
+        result = await session.execute(query)
+        accounts = result.scalars().all()
+    
+    if not accounts:
+        print("[DailyCredit] 没有需要领取积分的账户")
+        return
+    
+    print(f"[DailyCredit] 发现 {len(accounts)} 个非 CN 区域账户需要领取积分")
+    
+    success_count = 0
+    fail_count = 0
+    total_received = 0
+    
+    for account in accounts:
+        try:
+            quota = await receive_daily_credit(account.session_id, account.region)
+            if quota is not None and quota > 0:
+                success_count += 1
+                total_received += quota
+                print(f"[DailyCredit] ✓ {account.email} 领取积分: {quota}")
+            elif quota == 0:
+                # quota 为 0 表示今日已领取过
+                print(f"[DailyCredit] ○ {account.email} 今日已领取")
+            else:
+                fail_count += 1
+                print(f"[DailyCredit] ✗ {account.email} 领取失败")
+        except Exception as e:
+            fail_count += 1
+            print(f"[DailyCredit] ✗ {account.email} 领取异常: {e}")
+        
+        # 每次请求之间短暂延迟，避免请求过于密集
+        await asyncio.sleep(0.5)
+    
+    print(f"[DailyCredit] 批量领取完成: 成功 {success_count}, 失败 {fail_count}, 共领取 {total_received} 积分")
+
 async def reset_usage_counts_task():
     """后台任务：在设定时间重置所有账户的使用次数"""
     last_reset_date = None
@@ -247,8 +294,11 @@ async def reset_usage_counts_task():
                 # Session 自动更新：查询过期账户并批量更新
                 await _auto_update_expired_sessions()
                 
-                # 批量更新所有账户积分（CN 区域跳过）
-                await _update_all_accounts_credit()
+                # 批量领取今日积分（CN 区域跳过）
+                await _receive_all_accounts_credit()
+                
+                # # 批量更新所有账户积分（CN 区域跳过）
+                # await _update_all_accounts_credit()
         except Exception as e:
             print(f"[ResetCounts] 错误: {e}")
         

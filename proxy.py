@@ -107,6 +107,78 @@ async def fetch_account_credit(session_id: str, region: str) -> Optional[float]:
         logger.error(f"[CreditQuery] 积分查询异常: {e}")
         return None
 
+
+async def receive_daily_credit(session_id: str, region: str) -> Optional[int]:
+    """
+    领取今日免费积分。
+    CN 区域不支持，返回 None。
+    
+    Args:
+        session_id: 账户的 session_id（不含区域前缀）
+        region: 账户区域 (us, hk, jp, sg, cn)
+    
+    Returns:
+        领取的积分数量，失败或 CN 区域返回 None
+    """
+    region_lower = region.lower()
+    
+    # CN 区域不支持积分领取
+    if region_lower == "cn":
+        logger.debug(f"[DailyCredit] 跳过 CN 区域账户积分领取")
+        return None
+    
+    # 根据区域选择 Commerce API
+    if region_lower == "us":
+        base_url = COMMERCE_URL_US
+        aid = 513641
+    else:  # hk, jp, sg
+        base_url = COMMERCE_URL_SG
+        aid = 513641
+    
+    # 构造 Cookie
+    cookie = f"sessionid={session_id}; sessionid_ss={session_id}; sid_tt={session_id}"
+    
+    # 构造请求头
+    headers = {
+        **FAKE_HEADERS,
+        "Cookie": cookie,
+        "Referer": "https://dreamina.capcut.com/",
+        "Origin": "https://dreamina.capcut.com",
+        "Content-Type": "application/json",
+    }
+    
+    url = f"{base_url}/commerce/v1/benefits/credit_receive"
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url,
+                json={"time_zone": "Asia/Shanghai"},
+                headers=headers,
+                params={"aid": aid}
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"[DailyCredit] 积分领取失败: HTTP {response.status_code}")
+                return None
+            
+            data = response.json()
+            
+            # 检查响应
+            if data.get("ret") != "0" and data.get("ret") != 0:
+                logger.warning(f"[DailyCredit] 积分领取返回错误: {data}")
+                return None
+            
+            receive_quota = data.get("data", {}).get("receive_quota", 0)
+            logger.info(f"[DailyCredit] 积分领取成功: {receive_quota}")
+            
+            return int(receive_quota)
+            
+    except Exception as e:
+        logger.error(f"[DailyCredit] 积分领取异常: {e}")
+        return None
+
+
 router = APIRouter()
 
 # 轮询索引
@@ -168,7 +240,6 @@ async def get_valid_account(model_name: str, db: AsyncSession) -> Optional[Accou
 async def update_account_usage(account_id: int, model_name: str):
     """
     Increment usage counter for the account and model.
-    Also fetch and update account credit (skip CN region).
     """
     async with AsyncSessionLocal() as db:
         account = await db.get(Account, account_id)
@@ -185,13 +256,6 @@ async def update_account_usage(account_id: int, model_name: str):
             account.nanobananapro_count += 1
         elif model_name == "video-3.0":
             account.video_3_0_count += 1
-        
-        # 查询并更新积分（CN 区域跳过）
-        if account.session_id and account.region:
-            credit = await fetch_account_credit(account.session_id, account.region)
-            if credit is not None:
-                account.points = credit
-                logger.info(f"[CreditUpdate] {account.email} 积分已更新: {credit}")
             
         await db.commit()
 

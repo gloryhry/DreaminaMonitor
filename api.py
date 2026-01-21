@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from database import get_db, Account
 from config import settings
-from proxy import fetch_account_credit
+from proxy import fetch_account_credit, receive_daily_credit
 
 router = APIRouter(prefix="/api")
 
@@ -223,6 +223,7 @@ async def bulk_delete_accounts(data: BulkIdsRequest, db: AsyncSession = Depends(
 
 @router.post("/accounts/bulk-update-points")
 async def bulk_refresh_points(data: BulkRefreshPointsRequest, db: AsyncSession = Depends(get_db)):
+    """批量领取今日积分并更新积分"""
     result = await db.execute(select(Account).where(Account.id.in_(data.ids)))
     accounts = result.scalars().all()
     accounts_by_id = {acc.id: acc for acc in accounts}
@@ -232,6 +233,7 @@ async def bulk_refresh_points(data: BulkRefreshPointsRequest, db: AsyncSession =
     failed_count = 0
     skipped_count = 0
     failures = []
+    total_received = 0
 
     for acc in accounts:
         try:
@@ -239,24 +241,27 @@ async def bulk_refresh_points(data: BulkRefreshPointsRequest, db: AsyncSession =
                 skipped_count += 1
                 continue
 
-            credit = await fetch_account_credit(acc.session_id, acc.region)
-            if credit is None:
-                acc.points = 0
+            # 调用 receive_daily_credit 领取今日积分
+            quota = await receive_daily_credit(acc.session_id, acc.region)
+            if quota is None:
                 failed_count += 1
                 if len(failures) < 20:
-                    failures.append({"id": acc.id, "email": acc.email, "error": "credit query failed"})
+                    failures.append({"id": acc.id, "email": acc.email, "error": "daily credit receive failed"})
+            elif quota == 0:
+                # quota 为 0 表示今日已领取过
+                skipped_count += 1
             else:
-                acc.points = credit
+                total_received += quota
+                # 领取成功后查询最新积分
+                credit = await fetch_account_credit(acc.session_id, acc.region)
+                if credit is not None:
+                    acc.points = credit
                 acc.updated_at = datetime.now()
                 updated_count += 1
 
             await db.commit()
         except Exception as e:
-            try:
-                acc.points = 0
-                await db.commit()
-            except Exception:
-                await db.rollback()
+            await db.rollback()
             failed_count += 1
             if len(failures) < 20:
                 failures.append({"id": acc.id, "email": acc.email, "error": str(e)})
@@ -268,6 +273,7 @@ async def bulk_refresh_points(data: BulkRefreshPointsRequest, db: AsyncSession =
         "updated_count": updated_count,
         "failed_count": failed_count,
         "skipped_count": skipped_count,
+        "total_received": total_received,
         "missing_ids": missing_ids,
         "failures": failures,
     }
