@@ -403,8 +403,34 @@ async def auto_register_task():
                             )
                             db_session.add(new_account)
                             await db_session.commit()
+                            await db_session.refresh(new_account)
+                            account_id = new_account.id
                         
                         print(f"[AutoRegister] ✓ 账户注册成功: {email}")
+                        
+                        # 为新注册的账户领取今日积分并更新积分数值
+                        if region.lower() != "cn":
+                            try:
+                                # 领取今日积分
+                                quota = await receive_daily_credit(clean_session_id, region)
+                                if quota is not None and quota > 0:
+                                    print(f"[AutoRegister] ✓ {email} 领取积分: {quota}")
+                                elif quota == 0:
+                                    print(f"[AutoRegister] ○ {email} 今日已领取")
+                                else:
+                                    print(f"[AutoRegister] ✗ {email} 领取积分失败")
+                                
+                                # 查询并更新最新积分
+                                credit = await fetch_account_credit(clean_session_id, region)
+                                if credit is not None:
+                                    async with AsyncSessionLocal() as update_session:
+                                        db_account = await update_session.get(Account, account_id)
+                                        if db_account:
+                                            db_account.points = credit
+                                            await update_session.commit()
+                                    print(f"[AutoRegister] ✓ {email} 积分更新: {credit}")
+                            except Exception as e:
+                                print(f"[AutoRegister] ✗ {email} 积分操作异常: {e}")
                         break
                     
                     elif status == "failed":

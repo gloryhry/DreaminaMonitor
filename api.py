@@ -366,6 +366,39 @@ async def bulk_create_accounts(data: BulkAccountCreate, db: AsyncSession = Depen
     
     if created_count > 0:
         await db.commit()
+        
+        # 为新创建的非 CN 区域账户领取今日积分并更新积分数值
+        for acc in accounts_to_create:
+            region = data.region
+            if region.lower() == "cn":
+                continue
+            
+            session_id = acc["session_id"]
+            email = acc["email"]
+            
+            try:
+                # 领取今日积分
+                quota = await receive_daily_credit(session_id, region)
+                if quota is not None and quota > 0:
+                    print(f"[BulkCreate] ✓ {email} 领取积分: {quota}")
+                elif quota == 0:
+                    print(f"[BulkCreate] ○ {email} 今日已领取")
+                
+                # 查询并更新最新积分
+                credit = await fetch_account_credit(session_id, region)
+                if credit is not None:
+                    # 查找刚创建的账户并更新积分
+                    result = await db.execute(select(Account).where(Account.email == email))
+                    db_account = result.scalar_one_or_none()
+                    if db_account:
+                        db_account.points = credit
+                        await db.commit()
+                        print(f"[BulkCreate] ✓ {email} 积分更新: {credit}")
+            except Exception as e:
+                print(f"[BulkCreate] ✗ {email} 积分操作异常: {e}")
+            
+            # 短暂延迟避免请求过快
+            await asyncio.sleep(0.5)
     
     return {
         "message": f"成功创建 {created_count} 个账户",
