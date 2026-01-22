@@ -32,6 +32,33 @@ FAKE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
 }
 
+
+def _create_proxy_client(timeout: float = 30.0) -> httpx.AsyncClient:
+    """
+    创建支持代理的 HTTP 客户端。
+    - HTTP/HTTPS 代理: 使用 httpx 原生支持
+    - SOCKS5 代理: 使用 httpx-socks 的 AsyncProxyTransport
+    
+    代理 URL 格式:
+    - http://host:port
+    - http://user:pass@host:port
+    - socks5://host:port
+    - socks5://user:pass@host:port
+    """
+    proxy_url = settings.CREDIT_PROXY_URL
+    
+    if not proxy_url:
+        return httpx.AsyncClient(timeout=timeout)
+    
+    if proxy_url.startswith("socks"):
+        # SOCKS 代理使用 httpx-socks
+        from httpx_socks import AsyncProxyTransport
+        transport = AsyncProxyTransport.from_url(proxy_url)
+        return httpx.AsyncClient(transport=transport, timeout=timeout)
+    else:
+        # HTTP/HTTPS 代理使用 httpx 原生支持
+        return httpx.AsyncClient(proxy=proxy_url, timeout=timeout)
+
 async def fetch_account_credit(session_id: str, region: str) -> Optional[float]:
     """
     获取账户积分信息。
@@ -74,7 +101,7 @@ async def fetch_account_credit(session_id: str, region: str) -> Optional[float]:
     url = f"{base_url}/commerce/v1/benefits/user_credit"
     
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with _create_proxy_client(timeout=30.0) as client:
             response = await client.post(
                 url,
                 json={},
@@ -150,7 +177,7 @@ async def receive_daily_credit(session_id: str, region: str) -> Optional[int]:
     url = f"{base_url}/commerce/v1/benefits/credit_receive"
     
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with _create_proxy_client(timeout=30.0) as client:
             response = await client.post(
                 url,
                 json={"time_zone": "Asia/Shanghai"},

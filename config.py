@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # 账户选择策略
     MIN_CALL_POINTS: float = Field(default=1.0)
     
+    # 代理配置（用于积分查询和领取接口）
+    # 格式: http://host:port 或 socks5://host:port
+    # 带认证: http://user:pass@host:port 或 socks5://user:pass@host:port
+    CREDIT_PROXY_URL: Optional[str] = Field(default=None)
+    
     @classmethod
     def load_config(cls) -> "Settings":
         """从 config.json 加载配置"""

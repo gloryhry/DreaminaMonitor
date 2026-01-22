@@ -97,6 +97,8 @@ class SettingsUpdate(BaseModel):
     POINTS_UPDATE_INTERVAL: Optional[int] = None
     # Account selection strategy
     MIN_CALL_POINTS: Optional[float] = None
+    # Credit API proxy
+    CREDIT_PROXY_URL: Optional[str] = None
 
 class AccountIdsResponse(BaseModel):
     total: int
