@@ -212,6 +212,25 @@ async def _update_all_accounts_credit():
     
     print(f"[CreditUpdate] 批量更新完成: 成功 {success_count}, 失败 {fail_count}")
 
+async def _reset_all_accounts_credit():
+    """将所有账户的积分重置为 0"""
+    print("[CreditReset] 开始重置所有账户积分为 0...")
+    
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Account))
+        accounts = result.scalars().all()
+        
+        if not accounts:
+            print("[CreditReset] 没有账户需要重置积分")
+            return
+        
+        for account in accounts:
+            account.points = 0
+        
+        await session.commit()
+        print(f"[CreditReset] 已重置 {len(accounts)} 个账户的积分为 0")
+
+
 async def _receive_all_accounts_credit():
     """批量为所有非 CN 区域账户领取今日积分"""
     print("[DailyCredit] 开始批量领取今日积分...")
@@ -293,6 +312,9 @@ async def reset_usage_counts_task():
                 
                 # Session 自动更新：查询过期账户并批量更新
                 await _auto_update_expired_sessions()
+                
+                # 先将所有账户积分重置为 0
+                await _reset_all_accounts_credit()
                 
                 # 批量领取今日积分（CN 区域跳过）
                 await _receive_all_accounts_credit()
