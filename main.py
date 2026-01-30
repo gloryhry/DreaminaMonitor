@@ -263,6 +263,19 @@ async def _receive_all_accounts_credit():
                 success_count += 1
                 total_received += quota
                 print(f"[DailyCredit] ✓ {account.email} 领取积分: {quota}")
+                
+                # 领取成功后立刻查询并更新账户积分
+                try:
+                    credit = await fetch_account_credit(account.session_id, account.region)
+                    if credit is not None:
+                        async with AsyncSessionLocal() as db_session:
+                            db_account = await db_session.get(Account, account.id)
+                            if db_account:
+                                db_account.points = credit
+                                await db_session.commit()
+                        print(f"[DailyCredit] ✓ {account.email} 积分更新: {credit}")
+                except Exception as e:
+                    print(f"[DailyCredit] ✗ {account.email} 积分更新失败: {e}")
             elif quota == 0:
                 # quota 为 0 表示今日已领取过
                 print(f"[DailyCredit] ○ {account.email} 今日已领取")
@@ -274,7 +287,7 @@ async def _receive_all_accounts_credit():
             print(f"[DailyCredit] ✗ {account.email} 领取异常: {e}")
         
         # 每次请求之间短暂延迟，避免请求过于密集
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)
     
     print(f"[DailyCredit] 批量领取完成: 成功 {success_count}, 失败 {fail_count}, 共领取 {total_received} 积分")
 
