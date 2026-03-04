@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, or_, select, update
 from database import init_db, AsyncSessionLocal, Account
 from api import router as api_router
 from proxy import router as proxy_router, fetch_account_credit, receive_daily_credit
@@ -524,70 +524,108 @@ async def _receive_all_accounts_credit():
 
 
 async def _reset_all_accounts_credit():
-    """将所有账户的积分重置为 0"""
+    """将所有账户的积分重置为 0（仅更新非 0 记录）"""
     print("[CreditReset] 开始重置所有账户积分为 0...")
-    
+
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Account))
-        accounts = result.scalars().all()
-        
-        if not accounts:
-            print("[CreditReset] 没有账户需要重置积分")
-            return
-        
-        for account in accounts:
-            account.points = 0
-        
+        result = await session.execute(
+            update(Account)
+            .where(Account.points != 0)
+            .values(points=0)
+        )
         await session.commit()
-        print(f"[CreditReset] 已重置 {len(accounts)} 个账户的积分为 0")
+
+    updated_rows = result.rowcount if result.rowcount is not None and result.rowcount >= 0 else None
+    if updated_rows is None:
+        print("[CreditReset] 账户积分重置完成")
+    elif updated_rows == 0:
+        print("[CreditReset] 没有账户需要重置积分")
+    else:
+        print(f"[CreditReset] 已重置 {updated_rows} 个账户的积分为 0")
 
 
 async def reset_usage_counts_task():
     """后台任务：在设定时间重置所有账户的使用次数"""
     last_reset_date = None
+
     while True:
         try:
             now = datetime.now()
             reset_time = settings.RESET_COUNTS_TIME
-            reset_hour, reset_minute = map(int, reset_time.split(":"))
-            
+
+            # 校验 RESET_COUNTS_TIME，要求 HH:MM 且数值范围合法
+            time_parts = reset_time.split(":")
+            if (
+                len(time_parts) != 2
+                or len(time_parts[0]) != 2
+                or len(time_parts[1]) != 2
+                or not time_parts[0].isdigit()
+                or not time_parts[1].isdigit()
+            ):
+                print(f"[ResetCounts] RESET_COUNTS_TIME 配置无效: {reset_time}（应为 HH:MM）")
+                await asyncio.sleep(30)
+                continue
+
+            reset_hour, reset_minute = map(int, time_parts)
+            if not (0 <= reset_hour <= 23 and 0 <= reset_minute <= 59):
+                print(f"[ResetCounts] RESET_COUNTS_TIME 配置超出范围: {reset_time}（小时 00-23，分钟 00-59）")
+                await asyncio.sleep(30)
+                continue
+
             # 检查是否到达重置时间且今天还未重置
-            if (now.hour == reset_hour and 
-                now.minute == reset_minute and 
-                last_reset_date != now.date()):
-                
-                async with AsyncSessionLocal() as session:
-                    result = await session.execute(select(Account))
-                    accounts = result.scalars().all()
-                    
-                    # 动态获取所有以 _count 结尾的字段（排除 error_count）
-                    count_fields = [
-                        col.name for col in Account.__table__.columns 
-                        if col.name.endswith('_count') and col.name != 'error_count'
-                    ]
-                    
-                    for account in accounts:
-                        for field in count_fields:
-                            setattr(account, field, 0)
-                    
-                    await session.commit()
-                    last_reset_date = now.date()
-                    print(f"[ResetCounts] 已重置 {len(accounts)} 个账户的 {len(count_fields)} 个计数字段")
-                
+            if (
+                now.hour == reset_hour
+                and now.minute == reset_minute
+                and last_reset_date != now.date()
+            ):
+                # 动态获取所有以 _count 结尾的字段（排除 error_count）
+                count_fields = [
+                    col.name for col in Account.__table__.columns
+                    if col.name.endswith("_count") and col.name != "error_count"
+                ]
+
+                if count_fields:
+                    reset_values = {field: 0 for field in count_fields}
+                    non_zero_conditions = [getattr(Account, field) != 0 for field in count_fields]
+
+                    async with AsyncSessionLocal() as session:
+                        result = await session.execute(
+                            update(Account)
+                            .where(or_(*non_zero_conditions))
+                            .values(**reset_values)
+                        )
+                        await session.commit()
+
+                    reset_rows = (
+                        result.rowcount
+                        if result.rowcount is not None and result.rowcount >= 0
+                        else None
+                    )
+                    if reset_rows is None:
+                        print(f"[ResetCounts] 已执行计数字段重置，字段数 {len(count_fields)}")
+                    elif reset_rows == 0:
+                        print(f"[ResetCounts] 没有账户需要重置计数字段（字段数 {len(count_fields)}）")
+                    else:
+                        print(f"[ResetCounts] 已重置 {reset_rows} 个账户的 {len(count_fields)} 个计数字段")
+                else:
+                    print("[ResetCounts] 未发现可重置的计数字段，跳过使用次数重置")
+
+                last_reset_date = now.date()
+
                 # Session 自动更新：查询过期账户并批量更新
                 await _auto_update_expired_sessions()
-                
+
                 # 先将所有账户积分重置为 0
                 await _reset_all_accounts_credit()
-                
+
                 # 批量领取今日积分（CN 区域跳过）
                 await _receive_all_accounts_credit()
-                
+
                 # # 批量更新所有账户积分（CN 区域跳过）
                 # await _update_all_accounts_credit()
         except Exception as e:
             print(f"[ResetCounts] 错误: {e}")
-        
+
         await asyncio.sleep(30)  # 每30秒检查一次
 
 async def auto_register_task():
