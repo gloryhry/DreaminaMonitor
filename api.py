@@ -95,6 +95,8 @@ class SettingsUpdate(BaseModel):
     # Points update settings
     POINTS_UPDATE_ENABLED: Optional[bool] = None
     POINTS_UPDATE_INTERVAL: Optional[int] = None
+    CREDIT_TASK_THREADS: Optional[int] = None
+    CREDIT_DB_COMMIT_BATCH_SIZE: Optional[int] = None
     # Account selection strategy
     MIN_CALL_POINTS: Optional[float] = None
     # Credit API proxy
@@ -113,11 +115,19 @@ class BulkRefreshPointsRequest(BulkIdsRequest):
 class BulkUpdateSessionRequest(BulkIdsRequest):
     concurrency: int = Field(default=5, ge=1, le=20)
 
-def _apply_account_filters(query, region: Optional[str], email: Optional[str], points_lt: Optional[float]):
+def _apply_account_filters(
+    query,
+    region: Optional[str],
+    email: Optional[str],
+    points_gt: Optional[float],
+    points_lt: Optional[float],
+):
     if region:
         query = query.where(Account.region == region)
     if email:
         query = query.where(Account.email.contains(email))
+    if points_gt is not None:
+        query = query.where(Account.points > points_gt)
     if points_lt is not None:
         query = query.where(Account.points < points_lt)
     return query
@@ -129,10 +139,11 @@ async def get_accounts(
     size: int = Query(100, ge=1, le=1000),
     region: Optional[str] = None,
     email: Optional[str] = None,
+    points_gt: Optional[float] = None,
     points_lt: Optional[float] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    query = _apply_account_filters(select(Account), region, email, points_lt)
+    query = _apply_account_filters(select(Account), region, email, points_gt, points_lt)
     
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
@@ -154,11 +165,12 @@ async def get_accounts(
 async def get_account_ids(
     region: Optional[str] = None,
     email: Optional[str] = None,
+    points_gt: Optional[float] = None,
     points_lt: Optional[float] = None,
     limit: int = Query(50000, ge=1, le=50000),
     db: AsyncSession = Depends(get_db),
 ):
-    query = _apply_account_filters(select(Account.id), region, email, points_lt)
+    query = _apply_account_filters(select(Account.id), region, email, points_gt, points_lt)
 
     count_query = select(func.count()).select_from(query.subquery())
     total = await db.scalar(count_query)

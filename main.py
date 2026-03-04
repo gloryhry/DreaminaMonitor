@@ -1,12 +1,14 @@
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from typing import Any, AsyncIterator, Awaitable, Callable
 import httpx
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select, update
 from database import init_db, AsyncSessionLocal, Account
 from api import router as api_router
 from proxy import router as proxy_router, fetch_account_credit, receive_daily_credit
@@ -25,6 +27,12 @@ _unban_task = None
 _reset_counts_task = None
 _auto_register_task = None
 _points_update_task = None
+
+# 积分任务并发组件
+CREDIT_EXECUTOR_MAX_WORKERS = 64
+_credit_executor: ThreadPoolExecutor | None = None
+_credit_update_lock = asyncio.Lock()
+_daily_credit_lock = asyncio.Lock()
 
 async def unban_accounts_task():
     """后台任务：每分钟检查并解禁到期账户"""
@@ -154,12 +162,187 @@ def _strip_region_prefix(session_id: str) -> str:
             return session_id[len(prefix):]
     return session_id
 
-async def _update_all_accounts_credit():
-    """批量更新所有非 CN 区域账户的积分"""
+def _get_credit_task_runtime_config() -> dict[str, int]:
+    """读取积分任务配置快照，避免运行中配置争用。"""
+    thread_count = max(1, int(getattr(settings, "CREDIT_TASK_THREADS", 5) or 5))
+    thread_count = min(thread_count, CREDIT_EXECUTOR_MAX_WORKERS)
+    commit_batch_size = max(1, int(getattr(settings, "CREDIT_DB_COMMIT_BATCH_SIZE", 20) or 20))
+    commit_batch_size = min(commit_batch_size, 500)
+    return {
+        "threads": thread_count,
+        "commit_batch_size": commit_batch_size,
+    }
+
+
+def _ensure_credit_executor() -> ThreadPoolExecutor:
+    """按需创建积分任务线程池。"""
+    global _credit_executor
+    if _credit_executor is None:
+        _credit_executor = ThreadPoolExecutor(
+            max_workers=CREDIT_EXECUTOR_MAX_WORKERS,
+            thread_name_prefix="credit-worker",
+        )
+    return _credit_executor
+
+
+async def _shutdown_credit_executor() -> None:
+    """关闭线程池，避免线程泄漏。"""
+    global _credit_executor
+    if _credit_executor is None:
+        return
+
+    executor = _credit_executor
+    _credit_executor = None
+
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, executor.shutdown, True)
+
+
+async def _run_fetch_credit_in_thread(
+    session_id: str,
+    region: str,
+    executor: ThreadPoolExecutor,
+) -> float | None:
+    """在线程中执行积分查询（仅网络调用）。"""
+    loop = asyncio.get_running_loop()
+
+    def _worker() -> float | None:
+        return asyncio.run(fetch_account_credit(session_id, region))
+
+    return await loop.run_in_executor(executor, _worker)
+
+
+async def _run_receive_daily_credit_and_fetch_in_thread(
+    session_id: str,
+    region: str,
+    executor: ThreadPoolExecutor,
+) -> tuple[int | None, float | None]:
+    """在线程中执行领取与积分查询（仅网络调用）。"""
+    loop = asyncio.get_running_loop()
+
+    def _worker() -> tuple[int | None, float | None]:
+        quota = asyncio.run(receive_daily_credit(session_id, region))
+        if quota is not None and quota > 0:
+            credit = asyncio.run(fetch_account_credit(session_id, region))
+            return quota, credit
+        return quota, None
+
+    return await loop.run_in_executor(executor, _worker)
+
+
+async def _iter_completed_tasks(tasks: list[asyncio.Task[Any]]) -> AsyncIterator[Any]:
+    """按完成顺序遍历任务结果。"""
+    for finished in asyncio.as_completed(tasks):
+        yield await finished
+
+
+async def _flush_credit_updates(updates: list[dict[str, Any]], mode: str) -> tuple[int, int]:
+    """按批次落库积分更新。"""
+    if not updates:
+        return 0, 0
+
+    pending_success = 0
+    pending_fail = 0
+    logs: list[str] = []
+
+    async with AsyncSessionLocal() as db_session:
+        try:
+            for item in updates:
+                stmt = (
+                    update(Account)
+                    .where(Account.id == item["id"])
+                    .values(points=item["points"])
+                )
+                await db_session.execute(stmt)
+
+                email = item.get("email", "<unknown>")
+                if item.get("ok"):
+                    pending_success += 1
+                    logs.append(f"[{mode}] ✓ {email} 积分更新: {item['points']}")
+                else:
+                    pending_fail += 1
+                    logs.append(f"[{mode}] ✗ {email} {item.get('reason', '积分查询失败')}，积分设为 0")
+
+            await db_session.commit()
+            for line in logs:
+                print(line)
+            return pending_success, pending_fail
+        except Exception as e:
+            await db_session.rollback()
+            print(f"[{mode}] 批次提交失败（{len(updates)} 条）: {e}")
+            return 0, len(updates)
+
+
+async def _flush_daily_credit_updates(updates: list[dict[str, Any]], mode: str) -> tuple[int, int, int]:
+    """按批次落库每日积分更新。"""
+    if not updates:
+        return 0, 0, 0
+
+    pending_success = 0
+    pending_fail = 0
+    pending_received = 0
+    logs: list[str] = []
+
+    async with AsyncSessionLocal() as db_session:
+        try:
+            for item in updates:
+                email = item.get("email", "<unknown>")
+                quota = item.get("quota")
+                if item.get("status") == "received":
+                    pending_success += 1
+                    pending_received += int(quota or 0)
+                    if item.get("credit") is not None:
+                        stmt = (
+                            update(Account)
+                            .where(Account.id == item["id"])
+                            .values(points=item["credit"])
+                        )
+                        await db_session.execute(stmt)
+                        logs.append(f"[{mode}] ✓ {email} 领取积分: {quota}，积分更新: {item['credit']}")
+                    else:
+                        logs.append(f"[{mode}] ✓ {email} 领取积分: {quota}，积分查询失败")
+                elif item.get("status") == "already_received":
+                    logs.append(f"[{mode}] ○ {email} 今日已领取")
+                else:
+                    pending_fail += 1
+                    if item.get("set_zero"):
+                        stmt = (
+                            update(Account)
+                            .where(Account.id == item["id"])
+                            .values(points=0)
+                        )
+                        await db_session.execute(stmt)
+                    logs.append(f"[{mode}] ✗ {email} {item.get('reason', '领取失败')}")
+
+            await db_session.commit()
+            for line in logs:
+                print(line)
+            return pending_success, pending_fail, pending_received
+        except Exception as e:
+            await db_session.rollback()
+            print(f"[{mode}] 批次提交失败（{len(updates)} 条）: {e}")
+            return 0, len(updates), 0
+
+
+async def _run_with_lock_or_skip(
+    lock: asyncio.Lock,
+    tag: str,
+    coro_factory: Callable[[], Awaitable[None]],
+) -> None:
+    """防重入执行器：若任务已在运行，则跳过本轮。"""
+    if lock.locked():
+        print(f"[{tag}] 任务已在运行中，跳过本次触发")
+        return
+
+    async with lock:
+        await coro_factory()
+
+
+async def _run_credit_update_impl() -> None:
+    """执行积分更新（并发网络 + 单协程分批落库）。"""
     print("[CreditUpdate] 开始批量更新账户积分...")
-    
+
     async with AsyncSessionLocal() as session:
-        # 查询所有非 CN 区域的账户
         query = select(Account).where(
             and_(
                 Account.region != "cn",
@@ -168,49 +351,177 @@ async def _update_all_accounts_credit():
         )
         result = await session.execute(query)
         accounts = result.scalars().all()
-    
+
     if not accounts:
         print("[CreditUpdate] 没有需要更新积分的账户")
         return
-    
-    print(f"[CreditUpdate] 发现 {len(accounts)} 个非 CN 区域账户需要更新积分")
-    
+
+    runtime = _get_credit_task_runtime_config()
+    executor = _ensure_credit_executor()
+    semaphore = asyncio.Semaphore(runtime["threads"])
+
+    print(
+        f"[CreditUpdate] 发现 {len(accounts)} 个非 CN 区域账户需要更新积分，"
+        f"线程数={runtime['threads']}，批量提交={runtime['commit_batch_size']}"
+    )
+
+    async def _run_account(account: Account) -> dict[str, Any]:
+        async with semaphore:
+            try:
+                credit = await _run_fetch_credit_in_thread(account.session_id, account.region, executor)
+                if credit is None:
+                    return {
+                        "id": account.id,
+                        "email": account.email,
+                        "ok": False,
+                        "points": 0,
+                        "reason": "查询失败",
+                    }
+                return {
+                    "id": account.id,
+                    "email": account.email,
+                    "ok": True,
+                    "points": float(credit),
+                }
+            except Exception as e:
+                return {
+                    "id": account.id,
+                    "email": account.email,
+                    "ok": False,
+                    "points": 0,
+                    "reason": f"积分查询异常: {e}",
+                }
+
+    tasks = [asyncio.create_task(_run_account(account)) for account in accounts]
+    pending_updates: list[dict[str, Any]] = []
     success_count = 0
     fail_count = 0
-    
-    for account in accounts:
-        try:
-            credit = await fetch_account_credit(account.session_id, account.region)
-            async with AsyncSessionLocal() as db_session:
-                db_account = await db_session.get(Account, account.id)
-                if db_account:
-                    if credit is not None:
-                        db_account.points = credit
-                        success_count += 1
-                        print(f"[CreditUpdate] ✓ {account.email} 积分更新: {credit}")
-                    else:
-                        # 查询失败，将 points 设为 0
-                        db_account.points = 0
-                        fail_count += 1
-                        print(f"[CreditUpdate] ✗ {account.email} 查询失败，积分设为 0")
-                    await db_session.commit()
-        except Exception as e:
-            # 异常时将 points 设为 0
-            try:
-                async with AsyncSessionLocal() as db_session:
-                    db_account = await db_session.get(Account, account.id)
-                    if db_account:
-                        db_account.points = 0
-                        await db_session.commit()
-            except:
-                pass
-            fail_count += 1
-            print(f"[CreditUpdate] ✗ {account.email} 积分查询失败: {e}，积分设为 0")
-        
-        # 每次查询之间短暂延迟，避免请求过于密集
-        await asyncio.sleep(0.5)
-    
+
+    async for item in _iter_completed_tasks(tasks):
+        pending_updates.append(item)
+        if len(pending_updates) >= runtime["commit_batch_size"]:
+            s, f = await _flush_credit_updates(pending_updates, "CreditUpdate")
+            success_count += s
+            fail_count += f
+            pending_updates.clear()
+
+    if pending_updates:
+        s, f = await _flush_credit_updates(pending_updates, "CreditUpdate")
+        success_count += s
+        fail_count += f
+
     print(f"[CreditUpdate] 批量更新完成: 成功 {success_count}, 失败 {fail_count}")
+
+
+async def _run_daily_credit_impl() -> None:
+    """执行每日领取（并发网络 + 单协程分批落库）。"""
+    print("[DailyCredit] 开始批量领取今日积分...")
+
+    async with AsyncSessionLocal() as session:
+        query = select(Account).where(
+            and_(
+                Account.region != "cn",
+                Account.session_id.isnot(None)
+            )
+        )
+        result = await session.execute(query)
+        accounts = result.scalars().all()
+
+    if not accounts:
+        print("[DailyCredit] 没有需要领取积分的账户")
+        return
+
+    runtime = _get_credit_task_runtime_config()
+    executor = _ensure_credit_executor()
+    semaphore = asyncio.Semaphore(runtime["threads"])
+
+    print(
+        f"[DailyCredit] 发现 {len(accounts)} 个非 CN 区域账户需要领取积分，"
+        f"线程数={runtime['threads']}，批量提交={runtime['commit_batch_size']}"
+    )
+
+    async def _run_account(account: Account) -> dict[str, Any]:
+        async with semaphore:
+            try:
+                quota, credit = await _run_receive_daily_credit_and_fetch_in_thread(
+                    account.session_id,
+                    account.region,
+                    executor,
+                )
+                if quota is not None and quota > 0:
+                    return {
+                        "id": account.id,
+                        "email": account.email,
+                        "status": "received",
+                        "quota": int(quota),
+                        "credit": float(credit) if credit is not None else None,
+                    }
+                if quota == 0:
+                    return {
+                        "id": account.id,
+                        "email": account.email,
+                        "status": "already_received",
+                        "quota": 0,
+                    }
+                return {
+                    "id": account.id,
+                    "email": account.email,
+                    "status": "failed",
+                    "reason": "领取失败",
+                    "set_zero": False,
+                }
+            except Exception as e:
+                return {
+                    "id": account.id,
+                    "email": account.email,
+                    "status": "failed",
+                    "reason": f"领取异常: {e}",
+                    "set_zero": False,
+                }
+
+    tasks = [asyncio.create_task(_run_account(account)) for account in accounts]
+    pending_updates: list[dict[str, Any]] = []
+    success_count = 0
+    fail_count = 0
+    total_received = 0
+
+    async for item in _iter_completed_tasks(tasks):
+        pending_updates.append(item)
+        if len(pending_updates) >= runtime["commit_batch_size"]:
+            s, f, r = await _flush_daily_credit_updates(pending_updates, "DailyCredit")
+            success_count += s
+            fail_count += f
+            total_received += r
+            pending_updates.clear()
+
+    if pending_updates:
+        s, f, r = await _flush_daily_credit_updates(pending_updates, "DailyCredit")
+        success_count += s
+        fail_count += f
+        total_received += r
+
+    print(
+        f"[DailyCredit] 批量领取完成: 成功 {success_count}, 失败 {fail_count}, 共领取 {total_received} 积分"
+    )
+
+
+async def _update_all_accounts_credit():
+    """批量更新所有非 CN 区域账户的积分（防重入）。"""
+
+    async def _impl() -> None:
+        await _run_credit_update_impl()
+
+    await _run_with_lock_or_skip(_credit_update_lock, "CreditUpdate", _impl)
+
+
+async def _receive_all_accounts_credit():
+    """批量为所有非 CN 区域账户领取今日积分（防重入）。"""
+
+    async def _impl() -> None:
+        await _run_daily_credit_impl()
+
+    await _run_with_lock_or_skip(_daily_credit_lock, "DailyCredit", _impl)
+
 
 async def _reset_all_accounts_credit():
     """将所有账户的积分重置为 0"""
@@ -230,66 +541,6 @@ async def _reset_all_accounts_credit():
         await session.commit()
         print(f"[CreditReset] 已重置 {len(accounts)} 个账户的积分为 0")
 
-
-async def _receive_all_accounts_credit():
-    """批量为所有非 CN 区域账户领取今日积分"""
-    print("[DailyCredit] 开始批量领取今日积分...")
-    
-    async with AsyncSessionLocal() as session:
-        # 查询所有非 CN 区域的账户
-        query = select(Account).where(
-            and_(
-                Account.region != "cn",
-                Account.session_id.isnot(None)
-            )
-        )
-        result = await session.execute(query)
-        accounts = result.scalars().all()
-    
-    if not accounts:
-        print("[DailyCredit] 没有需要领取积分的账户")
-        return
-    
-    print(f"[DailyCredit] 发现 {len(accounts)} 个非 CN 区域账户需要领取积分")
-    
-    success_count = 0
-    fail_count = 0
-    total_received = 0
-    
-    for account in accounts:
-        try:
-            quota = await receive_daily_credit(account.session_id, account.region)
-            if quota is not None and quota > 0:
-                success_count += 1
-                total_received += quota
-                print(f"[DailyCredit] ✓ {account.email} 领取积分: {quota}")
-                
-                # 领取成功后立刻查询并更新账户积分
-                try:
-                    credit = await fetch_account_credit(account.session_id, account.region)
-                    if credit is not None:
-                        async with AsyncSessionLocal() as db_session:
-                            db_account = await db_session.get(Account, account.id)
-                            if db_account:
-                                db_account.points = credit
-                                await db_session.commit()
-                        print(f"[DailyCredit] ✓ {account.email} 积分更新: {credit}")
-                except Exception as e:
-                    print(f"[DailyCredit] ✗ {account.email} 积分更新失败: {e}")
-            elif quota == 0:
-                # quota 为 0 表示今日已领取过
-                print(f"[DailyCredit] ○ {account.email} 今日已领取")
-            else:
-                fail_count += 1
-                print(f"[DailyCredit] ✗ {account.email} 领取失败")
-        except Exception as e:
-            fail_count += 1
-            print(f"[DailyCredit] ✗ {account.email} 领取异常: {e}")
-        
-        # 每次请求之间短暂延迟，避免请求过于密集
-        await asyncio.sleep(0.1)
-    
-    print(f"[DailyCredit] 批量领取完成: 成功 {success_count}, 失败 {fail_count}, 共领取 {total_received} 积分")
 
 async def reset_usage_counts_task():
     """后台任务：在设定时间重置所有账户的使用次数"""
@@ -517,6 +768,7 @@ async def lifespan(app: FastAPI):
     global _unban_task, _reset_counts_task, _auto_register_task, _points_update_task
     # Startup
     await init_db()
+    _ensure_credit_executor()
     _unban_task = asyncio.create_task(unban_accounts_task())
     _reset_counts_task = asyncio.create_task(reset_usage_counts_task())
     _auto_register_task = asyncio.create_task(auto_register_task())
@@ -555,6 +807,8 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         print("[PointsUpdate] 后台任务已停止")
+    await _shutdown_credit_executor()
+    print("[CreditExecutor] 线程池已停止")
 
 app = FastAPI(lifespan=lifespan)
 

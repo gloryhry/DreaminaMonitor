@@ -34,3 +34,5 @@ config.json
 .ai_memory/
 .spec-workflow/
 .serena/
+CLAUDE.md
+dreamina.db*
