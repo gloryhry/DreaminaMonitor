@@ -36,3 +36,4 @@ config.json
 .serena/
 CLAUDE.md
 dreamina.db*
+.claude/

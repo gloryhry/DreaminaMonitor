@@ -612,14 +612,14 @@ async def reset_usage_counts_task():
 
                 last_reset_date = now.date()
 
-                # Session 自动更新：查询过期账户并批量更新
-                await _auto_update_expired_sessions()
-
                 # 先将所有账户积分重置为 0
                 await _reset_all_accounts_credit()
 
                 # 批量领取今日积分（CN 区域跳过）
                 await _receive_all_accounts_credit()
+                
+                # Session 自动更新：查询过期账户并批量更新
+                await _auto_update_expired_sessions()
 
                 # # 批量更新所有账户积分（CN 区域跳过）
                 # await _update_all_accounts_credit()
