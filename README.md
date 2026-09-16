@@ -16,7 +16,7 @@ Dreamina Manager 是一个基于 Python 和 Vue.js 的多账户管理与 API 代
 
 ### 自动化任务
 
-*   **自动注册账户**：支持配置自动注册间隔，由系统自动调用 Dreamina-register API 创建新账户。
+*   **自动注册账户**：支持配置自动注册间隔，由系统自动调用 [Dreamina-register](https://github.com/gloryhry/Dreamina-register) API 创建新账户。
 *   **Session 自动更新**：定期检查并更新超过指定天数的 `session_id`，保持账户活跃。
 *   **自动解禁**：后台任务每分钟检查禁用账户，到期自动解禁。
 *   **使用次数重置**：在设定时间自动重置所有账户的使用次数。
